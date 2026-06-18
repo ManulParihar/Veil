@@ -1,0 +1,9 @@
+[package]
+name = "veil-indexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "veil-indexer"
+path = "src/main.rs"

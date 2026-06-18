@@ -1,0 +1,77 @@
+//! THE gate test (CLAUDE.md Day-2 make-or-break).
+//!
+//! Asserts that veil-crypto's Poseidon is bit-identical to circomlib's, and
+//! pins the note/commitment/nullifier vectors that the circom circuit must
+//! reproduce. If any of these change, the whole system silently breaks, so they
+//! are frozen here as decimal strings (the format snarkjs emits for public
+//! signals) and mirrored in `circuits/test/transaction.test.js`.
+
+use ark_bn254::Fr;
+use ark_ff::PrimeField;
+use veil_crypto::{fr_from_u64, hash2, hash3, Keypair, Note};
+
+fn dec(x: Fr) -> String {
+    x.into_bigint().to_string()
+}
+
+/// Canonical circomlib vector: `Poseidon([1,2])`. Produced identically by
+/// circom's `Poseidon(2)` template (verified against the witness during build).
+#[test]
+fn poseidon_1_2_matches_circomlib() {
+    let got = hash2(fr_from_u64(1), fr_from_u64(2));
+    assert_eq!(
+        dec(got),
+        "7853200120776062878684798364095072458815029376092732009249414926327459813530",
+        "Poseidon(1,2) diverged from circomlib — the cross-impl gate is broken"
+    );
+}
+
+/// `Poseidon([1,2,3])` width-3 vector (circomlib canonical).
+#[test]
+fn poseidon_1_2_3_matches_circomlib() {
+    let got = hash3(fr_from_u64(1), fr_from_u64(2), fr_from_u64(3));
+    assert_eq!(
+        dec(got),
+        "6542985608222806190361240322586112750744169038454362455181422643027100751666",
+        "Poseidon(1,2,3) diverged from circomlib"
+    );
+}
+
+/// Pin the note pipeline end to end with fixed, simple inputs so the circuit
+/// can assert the same decimals. amount=100, sk=7, blinding=42, pathIndex=3.
+#[test]
+fn note_commitment_and_nullifier_vectors() {
+    let kp = Keypair::from_private(fr_from_u64(7));
+    let note = Note::new(100, kp.public_key, fr_from_u64(42));
+    let cm = note.commitment();
+    let nf = note.nullifier(kp.private_key, 3);
+    println!("VEC pk={}", dec(kp.public_key));
+    println!("VEC cm={}", dec(cm));
+    println!("VEC nf={}", dec(nf));
+    // pk = Poseidon(7)
+    assert_eq!(
+        dec(kp.public_key),
+        "7061949393491957813657776856458368574501817871421526214197139795307327923534"
+    );
+
+    // These two are the values a 1-input spend publishes; the circuit's
+    // `outputCommitment` / `inputNullifier` must equal them for the same inputs.
+    assert_eq!(
+        dec(cm),
+        "9393485090685125340160626343171654838660902907959359341345939329381592242612",
+        "commitment vector drifted"
+    );
+    assert_eq!(
+        dec(nf),
+        "15859786158883198570120416352149778089550541078065235834061119830959898607558",
+        "nullifier vector drifted"
+    );
+}
+
+/// Determinism: same inputs → same outputs, every run, every platform.
+#[test]
+fn derivations_are_deterministic() {
+    let a = Note::new(5, fr_from_u64(11), fr_from_u64(99)).commitment();
+    let b = Note::new(5, fr_from_u64(11), fr_from_u64(99)).commitment();
+    assert_eq!(a, b);
+}

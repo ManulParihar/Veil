@@ -1,0 +1,10 @@
+/target
+**/target
+node_modules
+circuits/build
+circuits/node_modules
+*.zkey
+*.wtns
+*.r1cs
+!circuits/build/verification_key.json
+.DS_Store

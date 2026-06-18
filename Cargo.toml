@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/veil-crypto",
+    "crates/veil-contract",
+    "crates/veil-sdk",
+    "indexer",
+]
+
+# Exclude the contract from the default workspace build set when building natively
+# is undesirable; it is still buildable explicitly. Kept as a member so tests run.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# The single source of BN254 + circomlib-compatible Poseidon truth.
+ark-bn254 = { version = "0.5", default-features = false }
+ark-ff = { version = "0.5", default-features = false }
+ark-ec = { version = "0.5", default-features = false }
+ark-serialize = { version = "0.5", default-features = false }
+light-poseidon = { version = "0.4", default-features = false }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
