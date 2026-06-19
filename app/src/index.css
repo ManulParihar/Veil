@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-veil-bg text-veil-text font-sans antialiased;
+  background-image:
+    radial-gradient(60rem 60rem at 110% -10%, rgba(124, 92, 255, 0.12), transparent 60%),
+    radial-gradient(50rem 50rem at -10% 110%, rgba(34, 211, 238, 0.08), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* thin custom scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { @apply bg-veil-border rounded-full; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@layer components {
+  .card {
+    @apply bg-veil-card border border-veil-border rounded-2xl;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-medium
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-veil-primary hover:bg-veil-primaryhover text-white shadow-glow;
+  }
+  .btn-ghost {
+    @apply btn bg-veil-surface hover:bg-veil-border border border-veil-border text-veil-text;
+  }
+  .input {
+    @apply w-full bg-veil-surface border border-veil-border rounded-xl px-4 py-3
+           text-veil-text placeholder:text-veil-muted outline-none
+           focus:border-veil-primary focus:ring-2 focus:ring-veil-primary/30 transition;
+  }
+  .label {
+    @apply text-sm font-medium text-veil-muted mb-1.5 block;
+  }
+  .mono {
+    @apply font-mono text-sm;
+  }
+}

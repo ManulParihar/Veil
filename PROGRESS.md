@@ -35,3 +35,39 @@ for the full architecture, INTERFACES.md for the frozen cross-plane contracts).
 3. Circuit: `cd circuits && bash scripts/setup.sh` then run test/transaction.test.js.
 4. Integration test lives in (planned) crates/veil-contract/tests or a top-level e2e.
 5. Update this table as things land.
+
+---
+
+# UI / dApp Build (PLANE 5) — Production-grade Veil Wallet
+
+GOAL: a production-grade web wallet for Veil with REAL integration — in-browser
+Groth16 proving, real note crypto bit-identical to the circuit, and real on-chain
+`transact` submission to the deployed contract — validated end-to-end in a real
+browser (Playwright: clicks, typing, screenshots).
+
+## Architecture (decided)
+- `app/` — Vite + React + TypeScript + Tailwind. State via zustand. Router.
+- Crypto in TS (no wasm-bindgen): `circomlibjs` Poseidon (== circomlib == veil-crypto),
+  `@noble/curves` x25519, `@noble/ciphers` chacha20poly1305, `js-sha3` keccak.
+  GATE: a vitest asserts TS poseidon/commitment/nullifier == pinned veil-crypto vectors.
+- Proving: `snarkjs` groth16 fullprove in a Web Worker, using circuits/build
+  transaction.wasm + transaction.zkey served as static assets.
+- Chain: `@stellar/stellar-sdk` → contract `CD6WNAX…` on testnet. In-app fee-payer
+  Stellar account (generate + friendbot fund). Note discovery via RPC getEvents +
+  trial-decrypt with view tags.
+
+## Interface contract (frozen for UI build)
+- veil identity = 32-byte seed (hex). Keys derived via crypto.ts (mirrors veil-crypto Seed).
+- Note = {amount:bigint, pubkey, blinding}. commitment/nullifier per INTERFACES §0.
+- Witness JSON field names == transaction.circom (see veil-sdk tx.rs report).
+- extDataHash per INTERFACES §4 (keccak of recipient||relayer||fee||len-prefixed cts||tags, mod r).
+- Public signals order per INTERFACES §3. Proof a/b/c → contract BytesN with G2 c1‖c0 swap.
+
+## Pieces (parallelized)
+| # | Piece | Owner | Status |
+|---|---|---|---|
+| U0 | Scaffold app + crypto GATE (TS poseidon==pinned vectors) | me | 🟡 |
+| U1 | Design system + pages (onboarding/dashboard/send/receive/activity) | agent | ⏳ |
+| U2 | Integration lib (snarkjs worker, stellar-sdk transact, RPC scan, accounts) | agent | ⏳ |
+| U3 | Browser E2E (Playwright: real flows, screenshots) | me+agent | ⏳ |
+| U4 | Integrate + real-browser validation + commit | me | ⏳ |
