@@ -61,9 +61,15 @@ Exactly 7, in this order:
 redirect funds. Definition (SDK computes, contract recomputes & compares):
 ```
 extDataHash = keccak256( recipient(32) || relayer(32) || fee_be(16) ||
-                         ciphertext[0] || ciphertext[1] ||
-                         viewTag[0](1) || viewTag[1](1) ) mod r
+                         u32be_len(ct0) || ct0 || u32be_len(ct1) || ct1 ||
+                         viewTag[0](1) || viewTag[1](1) ||
+                         u32be_len(settlementStrkey) || settlementStrkey(ascii) ) mod r
 ```
+- `settlement_address` (Phase 2): the Stellar strkey ("G…") of the deposit/withdraw
+  counterparty, appended as `u32-be length || ASCII bytes`. Binds the withdraw
+  recipient so a relayer can't redirect funds. For a pure transfer
+  (publicAmount==0) it is unused on-chain but still hashed — pass a fixed address.
+  Contract appends `settlement_address.to_string()`; clients append the strkey ASCII.
 - `recipient`, `relayer`: 32-byte Stellar address bytes (right-pad/encode
   consistently; for MVP use the 32-byte Ed25519 public key of the account).
 - `fee`: u128 big-endian, 16 bytes.

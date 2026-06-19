@@ -59,20 +59,24 @@ describe("encryption round-trip + fail-closed", () => {
 });
 
 describe("extDataHash determinism + sensitivity", () => {
-  it("changes when recipient changes", () => {
-    const base = { recipient: new Uint8Array(32), relayer: new Uint8Array(32), fee: 0n, ciphertexts: [new Uint8Array(), new Uint8Array()] as [Uint8Array, Uint8Array], viewTags: [0, 0] as [number, number] };
-    const h1 = extDataHash(base);
-    const h2 = extDataHash(base);
-    expect(h1).toBe(h2);
-    const changed = { ...base, recipient: fieldToBytes(5n) };
-    expect(extDataHash(changed)).not.toBe(h1);
+  const SETTLE_G = "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM";
+  const emptyBase = () => ({
+    recipient: new Uint8Array(32), relayer: new Uint8Array(32), fee: 0n,
+    ciphertexts: [new Uint8Array(), new Uint8Array()] as [Uint8Array, Uint8Array],
+    viewTags: [0, 0] as [number, number], settlementAddress: SETTLE_G,
   });
 
-  it("matches the on-chain empty-ExtData hash", () => {
-    // value computed by the contract / gen_transact_fixture.js for empty ExtData
-    const empty = { recipient: new Uint8Array(32), relayer: new Uint8Array(32), fee: 0n, ciphertexts: [new Uint8Array(), new Uint8Array()] as [Uint8Array, Uint8Array], viewTags: [0, 0] as [number, number] };
-    expect(extDataHash(empty).toString()).toBe(
-      "12274180586256115613035258515313315225750750685679601860991516828731164881326"
+  it("changes when recipient changes / settlement address changes", () => {
+    const base = emptyBase();
+    expect(extDataHash(base)).toBe(extDataHash(base));
+    expect(extDataHash({ ...base, recipient: fieldToBytes(5n) })).not.toBe(extDataHash(base));
+    expect(extDataHash({ ...base, settlementAddress: "GBOTHERADDRESS" })).not.toBe(extDataHash(base));
+  });
+
+  it("matches the on-chain empty-ExtData hash (with settlement binding)", () => {
+    // value computed by the contract / gen_transact_fixture.js for the SETTLE_G case
+    expect(extDataHash(emptyBase()).toString()).toBe(
+      "19770379959592559262147413031436042315599261732788161869224785290507777222292"
     );
   });
 });

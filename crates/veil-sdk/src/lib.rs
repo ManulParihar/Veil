@@ -150,6 +150,9 @@ impl Wallet {
             fee: 0,
             ciphertexts: [enc_recipient.wire(), enc_change.wire()],
             view_tags: [enc_recipient.view_tag, enc_change.view_tag],
+            // pure transfer (publicAmount == 0): settlement unused on-chain but
+            // still bound; a fixed placeholder strkey keeps the hash deterministic.
+            settlement_address: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM".into(),
         };
 
         let witness = TransactWitness {

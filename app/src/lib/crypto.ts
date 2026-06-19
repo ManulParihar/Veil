@@ -198,6 +198,9 @@ export interface ExtData {
   fee: bigint; // u128
   ciphertexts: [Uint8Array, Uint8Array];
   viewTags: [number, number];
+  /** Phase-2 settlement counterparty (Stellar G-address strkey). Bound into the
+   *  hash via its ASCII bytes so a withdraw recipient can't be redirected. */
+  settlementAddress: string;
 }
 
 function u32be(n: number): Uint8Array {
@@ -219,6 +222,10 @@ export function extDataHash(ext: ExtData): bigint {
   for (const ct of ext.ciphertexts) { push(u32be(ct.length)); push(ct); }
   parts.push(ext.viewTags[0] & 0xff);
   parts.push(ext.viewTags[1] & 0xff);
+  // settlement address strkey: u32-be length || ASCII bytes
+  const addr = new TextEncoder().encode(ext.settlementAddress);
+  push(u32be(addr.length));
+  push(addr);
   const digestHex = keccak256(new Uint8Array(parts));
   return BigInt("0x" + digestHex) % R;
 }

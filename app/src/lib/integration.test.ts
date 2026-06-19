@@ -30,6 +30,7 @@ describe("deposit witness → real proof → verify + format", () => {
       selfPub: keys.publicKey,
       selfEncPub: keys.encPublic,
       amount: 2500n,
+      settlementAddress: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
     });
 
     // value conservation: publicAmount(2500) == out0(2500) + out1(0)

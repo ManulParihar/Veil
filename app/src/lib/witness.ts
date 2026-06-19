@@ -43,7 +43,8 @@ function assemble(
   outs: [OutputSpec, OutputSpec],
   relayer: Uint8Array,
   recipient: Uint8Array,
-  fee: bigint
+  fee: bigint,
+  settlementAddress: string
 ): WitnessBundle {
   // encrypt outputs to their owners
   const encrypted = outs.map((o) => {
@@ -58,6 +59,7 @@ function assemble(
     fee,
     ciphertexts: [encrypted[0].wire, encrypted[1].wire],
     viewTags: [encrypted[0].enc.viewTag, encrypted[1].enc.viewTag],
+    settlementAddress,
   };
   const extHash = computeExtDataHash(extData);
 
@@ -114,11 +116,13 @@ function dummyInput(sk: bigint, pathIndex: number): InputSpec {
   return { amount: 0n, sk, blinding: rand(), pathIndex, pathElements: Array(TREE_LEVELS).fill(0n) };
 }
 
-/** Deposit: mint `amount` into a self-note. publicAmount = +amount, dummy inputs. */
+/** Deposit: pull `amount` from `settlementAddress` into a self-note.
+ *  publicAmount = +amount, dummy inputs. */
 export function buildDeposit(params: {
   root: bigint; sk: bigint; selfPub: bigint; selfEncPub: Uint8Array; amount: bigint;
+  settlementAddress: string;
 }): WitnessBundle {
-  const { root, sk, selfPub, selfEncPub, amount } = params;
+  const { root, sk, selfPub, selfEncPub, amount, settlementAddress } = params;
   return assemble(
     root, amount,
     [dummyInput(sk, 0), dummyInput(sk, 1)],
@@ -126,7 +130,7 @@ export function buildDeposit(params: {
       { amount, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
       { amount: 0n, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
     ],
-    new Uint8Array(32), fieldToBytes(selfPub), 0n
+    new Uint8Array(32), fieldToBytes(selfPub), 0n, settlementAddress
   );
 }
 
@@ -136,8 +140,9 @@ export function buildTransfer(params: {
   sk: bigint; selfPub: bigint; selfEncPub: Uint8Array;
   inputNote: Note; inputLeafIndex: number;
   amount: bigint; recipientPub: bigint; recipientEncPub: Uint8Array;
+  settlementAddress: string;
 }): WitnessBundle {
-  const { tree, sk, selfPub, selfEncPub, inputNote, inputLeafIndex, amount, recipientPub, recipientEncPub } = params;
+  const { tree, sk, selfPub, selfEncPub, inputNote, inputLeafIndex, amount, recipientPub, recipientEncPub, settlementAddress } = params;
   const path = tree.path(inputLeafIndex);
   if (!path) throw new Error("input note not in tree");
   const change = inputNote.amount - amount;
@@ -154,7 +159,7 @@ export function buildTransfer(params: {
       { amount, pubkey: recipientPub, blinding: rand(), encPub: recipientEncPub },
       { amount: change, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
     ],
-    new Uint8Array(32), fieldToBytes(recipientPub), 0n
+    new Uint8Array(32), fieldToBytes(recipientPub), 0n, settlementAddress
   );
 }
 
@@ -163,8 +168,9 @@ export function buildWithdraw(params: {
   tree: ClientMerkleTree;
   sk: bigint; selfPub: bigint; selfEncPub: Uint8Array;
   inputNote: Note; inputLeafIndex: number; amount: bigint;
+  settlementAddress: string;
 }): WitnessBundle {
-  const { tree, sk, selfPub, selfEncPub, inputNote, inputLeafIndex, amount } = params;
+  const { tree, sk, selfPub, selfEncPub, inputNote, inputLeafIndex, amount, settlementAddress } = params;
   const path = tree.path(inputLeafIndex);
   if (!path) throw new Error("input note not in tree");
   const change = inputNote.amount - amount;
@@ -181,6 +187,6 @@ export function buildWithdraw(params: {
       { amount: change, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
       { amount: 0n, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
     ],
-    new Uint8Array(32), fieldToBytes(selfPub), 0n
+    new Uint8Array(32), fieldToBytes(selfPub), 0n, settlementAddress
   );
 }

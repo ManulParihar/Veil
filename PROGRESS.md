@@ -97,7 +97,7 @@ contract's XLM custody balance reconciling.
   funds in, withdraw moves them out, balances reconcile, auth enforced, insufficient
   balance reverts. `cargo test -p veil-contract` green; builds wasm32v1-none.
 
-### P2-B · ExtData + extDataHash re-freeze (veil-crypto/SDK + app crypto + INTERFACES)
+### P2-B · ExtData + extDataHash re-freeze ✅ DONE
 - Add `settlement_address` (Stellar address) to `ExtData`, bound into `extDataHash`
   (so a relayer can't redirect a withdraw). Update INTERFACES §4, re-pin the
   empty-ExtData vector, and mirror in BOTH `crates/veil-sdk/src/tx.rs` AND

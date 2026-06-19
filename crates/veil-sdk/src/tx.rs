@@ -29,6 +29,11 @@ pub struct ExtData {
     pub ciphertexts: [Vec<u8>; 2],
     /// The two 1-byte view tags.
     pub view_tags: [u8; 2],
+    /// Phase-2 settlement counterparty as a Stellar strkey (e.g. "G..."). Bound
+    /// into the hash via its ASCII bytes so a withdraw recipient can't be
+    /// redirected. For a pure transfer (publicAmount == 0) it is unused on-chain
+    /// but still hashed, so the client must pass a fixed address.
+    pub settlement_address: String,
 }
 
 impl ExtData {
@@ -48,6 +53,10 @@ impl ExtData {
             k.update(ct);
         }
         k.update(&[self.view_tags[0], self.view_tags[1]]);
+        // settlement address strkey: u32-be length || ASCII bytes
+        let addr = self.settlement_address.as_bytes();
+        k.update(&(addr.len() as u32).to_be_bytes());
+        k.update(addr);
         let mut digest = [0u8; 32];
         k.finalize(&mut digest);
         // Reduce the 32-byte keccak digest mod r (big-endian).
@@ -249,6 +258,7 @@ mod tests {
             fee: 0,
             ciphertexts: [vec![1, 2, 3], vec![4, 5, 6, 7]],
             view_tags: [0xab, 0xcd],
+            settlement_address: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM".into(),
         }
     }
 
