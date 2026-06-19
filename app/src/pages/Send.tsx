@@ -14,10 +14,10 @@ export default function Send() {
   const { send, txs, balanceShielded, address } = useWallet();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
-  const [activeTx, setActiveTx] = useState<string | null>(null);
+  const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
-  const tx = txs.find((t) => t.id === activeTx);
+  const tx = started ? txs.find((t) => t.kind === "transfer") : undefined;
 
   const submit = async () => {
     const addr = parseAddress(to);
@@ -26,15 +26,9 @@ export default function Send() {
     if (a <= 0n) { toast.push("Enter an amount", "err"); return; }
     if (a > balanceShielded) { toast.push("Amount exceeds balance", "err"); return; }
     setBusy(true);
-    setActiveTx(null);
+    setStarted(true);
     try {
-      const before = useWallet.getState().txs[0]?.id;
-      const p = send(addr.pubkey, addr.encPub, a);
-      setTimeout(() => {
-        const latest = useWallet.getState().txs[0];
-        if (latest && latest.id !== before) setActiveTx(latest.id);
-      }, 30);
-      await p;
+      await send(addr.pubkey, addr.encPub, a);
       toast.push(`Sent ${a} VEIL privately`, "ok");
       setTo(""); setAmount("");
     } catch (e: any) {

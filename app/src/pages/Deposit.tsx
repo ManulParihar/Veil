@@ -6,26 +6,20 @@ import TxProgress from "../components/TxProgress";
 export default function Deposit() {
   const { deposit, txs, feeAccount } = useWallet();
   const [amount, setAmount] = useState("");
-  const [activeTx, setActiveTx] = useState<string | null>(null);
+  const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
-  const tx = txs.find((t) => t.id === activeTx);
+  // txs is newest-first; the latest deposit is the active one once we've started.
+  const tx = started ? txs.find((t) => t.kind === "deposit") : undefined;
 
   const submit = async () => {
     const a = BigInt(amount || "0");
     if (a <= 0n) { toast.push("Enter an amount", "err"); return; }
     if (!feeAccount?.funded) { toast.push("Fund your fee account first", "err"); return; }
     setBusy(true);
-    setActiveTx(null);
+    setStarted(true);
     try {
-      const before = useWallet.getState().txs[0]?.id;
-      const p = deposit(a);
-      // pick up the new tx record id
-      setTimeout(() => {
-        const latest = useWallet.getState().txs[0];
-        if (latest && latest.id !== before) setActiveTx(latest.id);
-      }, 30);
-      await p;
+      await deposit(a);
       toast.push(`Deposited ${a} VEIL`, "ok");
       setAmount("");
     } catch (e: any) {

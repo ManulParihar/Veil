@@ -17,9 +17,11 @@ import {
   CONTRACT_ID,
 } from "../lib/types";
 
-// derived, non-persisted runtime state
+// derived, non-persisted runtime state. The tree is created lazily (it computes
+// Poseidon zeros in its constructor, which must run AFTER initCrypto()).
 let KEYS: Keys | null = null;
-let TREE = new ClientMerkleTree();
+let TREE: ClientMerkleTree | null = null;
+const T = (): ClientMerkleTree => (TREE ??= new ClientMerkleTree());
 
 function ensureKeys(seedHex: string): Keys {
   if (!KEYS) KEYS = deriveKeys(fromHex(seedHex));
@@ -133,7 +135,7 @@ export const useWallet = create<Internal>()(
 
         reset: () => {
           KEYS = null;
-          TREE = new ClientMerkleTree();
+          TREE = null;
           set({
             initialised: false, seedHex: null, address: null, feeAccount: null,
             _feeSecret: null, notes: [], balanceShielded: 0n, currentRoot: null,
@@ -153,9 +155,11 @@ export const useWallet = create<Internal>()(
           const fa = get().feeAccount;
           if (!fa) return;
           const bal = await chain.getXlmBalance(fa.publicKey);
+          // `funded` is sticky: once friendbot succeeds it stays true even if
+          // Horizon hasn't indexed the balance yet (read lag must not lock the UI).
           set((s) => ({
             feeBalance: bal,
-            feeAccount: s.feeAccount ? { ...s.feeAccount, funded: parseFloat(bal) > 0 } : null,
+            feeAccount: s.feeAccount ? { ...s.feeAccount, funded: s.feeAccount.funded || parseFloat(bal) > 0 } : null,
           }));
         },
 
@@ -165,9 +169,9 @@ export const useWallet = create<Internal>()(
           try {
             const events = await chain.getNewCommitments();
             TREE = new ClientMerkleTree();
-            TREE.insertMany(events.map((e) => chain.toHex(e.commitment)).map((h) => BigInt("0x" + h)));
-            const root = fa ? await chain.getCurrentRoot(fa.publicKey).catch(() => toHex(fieldToBytes(TREE.root()))) : toHex(fieldToBytes(TREE.root()));
-            set({ currentRoot: root, nextLeafIndex: TREE.length });
+            T().insertMany(events.map((e) => chain.toHex(e.commitment)).map((h) => BigInt("0x" + h)));
+            const root = fa ? await chain.getCurrentRoot(fa.publicKey).catch(() => toHex(fieldToBytes(T().root()))) : toHex(fieldToBytes(T().root()));
+            set({ currentRoot: root, nextLeafIndex: T().length });
           } finally {
             set({ syncing: false });
           }
@@ -182,7 +186,7 @@ export const useWallet = create<Internal>()(
             const events = await chain.getNewCommitments();
             // rebuild tree so leaf indices align
             TREE = new ClientMerkleTree();
-            TREE.insertMany(events.map((e) => BigInt("0x" + chain.toHex(e.commitment))));
+            T().insertMany(events.map((e) => BigInt("0x" + chain.toHex(e.commitment))));
             const found = scanEvents(keys, events);
             const existing = new Set(get().notes.map((n) => n.leafIndex));
             const fresh = found
@@ -194,7 +198,7 @@ export const useWallet = create<Internal>()(
                 return { notes, balanceShielded: totalUnspent(notes) };
               });
             }
-            set({ nextLeafIndex: TREE.length });
+            set({ nextLeafIndex: T().length });
             return fresh.length;
           } finally {
             set({ syncing: false });
@@ -208,7 +212,7 @@ export const useWallet = create<Internal>()(
           await get().syncChain();
           const keys = ensureKeys(seedHex);
           const bundle = buildDeposit({
-            root: TREE.root(), sk: keys.spendKey, selfPub: keys.publicKey,
+            root: T().root(), sk: keys.spendKey, selfPub: keys.publicKey,
             selfEncPub: keys.encPublic, amount,
           });
           return runFlow("deposit", amount, bundle, (res) => {
@@ -216,7 +220,7 @@ export const useWallet = create<Internal>()(
             const note: Note = { amount, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding };
             set((s) => {
               const notes = [...s.notes, { note, leafIndex: res.leafIndices[0], spent: false, createdAt: now() }];
-              TREE.insertMany([0n, 0n]); // keep tree length in step (resync corrects values)
+              T().insertMany([0n, 0n]); // keep tree length in step (resync corrects values)
               return { notes };
             });
           });
@@ -233,7 +237,7 @@ export const useWallet = create<Internal>()(
           const input = get().notes.find((n) => !n.spent && n.note.amount >= amount && n.leafIndex != null);
           if (!input || input.leafIndex == null) { set({ busy: false }); throw new Error("no note covers that amount"); }
           const bundle = buildTransfer({
-            tree: TREE, sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
+            tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
             inputNote: input.note, inputLeafIndex: input.leafIndex,
             amount, recipientPub: BigInt(toPubkey), recipientEncPub: fromHex(toEncPub),
           });
@@ -261,7 +265,7 @@ export const useWallet = create<Internal>()(
           const input = get().notes.find((n) => !n.spent && n.note.amount >= amount && n.leafIndex != null);
           if (!input || input.leafIndex == null) { set({ busy: false }); throw new Error("no note covers that amount"); }
           const bundle = buildWithdraw({
-            tree: TREE, sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
+            tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
             inputNote: input.note, inputLeafIndex: input.leafIndex, amount,
           });
           const change = input.note.amount - amount;

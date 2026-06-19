@@ -66,8 +66,8 @@ browser (Playwright: clicks, typing, screenshots).
 ## Pieces (parallelized)
 | # | Piece | Owner | Status |
 |---|---|---|---|
-| U0 | Scaffold app + crypto GATE (TS poseidon==pinned vectors) | me | 🟡 |
-| U1 | Design system + pages (onboarding/dashboard/send/receive/activity) | agent | ⏳ |
-| U2 | Integration lib (snarkjs worker, stellar-sdk transact, RPC scan, accounts) | agent | ⏳ |
-| U3 | Browser E2E (Playwright: real flows, screenshots) | me+agent | ⏳ |
-| U4 | Integrate + real-browser validation + commit | me | ⏳ |
+| U0 | Scaffold + crypto GATE (TS poseidon==pinned, extDataHash==on-chain) | me | ✅ |
+| U1 | Design system + pages (built by me; agents hit session limit) | me | ✅ |
+| U2 | Integration lib (witness/prover-worker/proof/chain/scan/store) | me | ✅ |
+| U3 | Browser E2E (Playwright): create→fund→deposit→confirm PASSES | me | ✅ |
+| U4 | Real on-chain deposit from the browser: tx cd221ebe… · stellar-sdk 16 (proto-23 meta) | me | ✅ |
