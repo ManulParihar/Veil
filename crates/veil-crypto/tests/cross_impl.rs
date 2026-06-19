@@ -68,6 +68,23 @@ fn note_commitment_and_nullifier_vectors() {
     );
 }
 
+/// Cross-check our hand-rolled no_std permutation against the audited
+/// `light-poseidon` (circomlib-compatible) reference, across widths 1/2/3.
+#[test]
+fn matches_light_poseidon_reference() {
+    use light_poseidon::{Poseidon, PoseidonHasher};
+    for inputs in [
+        vec![fr_from_u64(1)],
+        vec![fr_from_u64(1), fr_from_u64(2)],
+        vec![fr_from_u64(7), fr_from_u64(13), fr_from_u64(99)],
+    ] {
+        let ours = veil_crypto::hashn(&inputs);
+        let mut reference = Poseidon::<Fr>::new_circom(inputs.len()).unwrap();
+        let theirs = reference.hash(&inputs).unwrap();
+        assert_eq!(ours, theirs, "diverged from light-poseidon at width {}", inputs.len());
+    }
+}
+
 /// Determinism: same inputs → same outputs, every run, every platform.
 #[test]
 fn derivations_are_deterministic() {

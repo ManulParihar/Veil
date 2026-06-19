@@ -1,0 +1,393 @@
+//! Contract-level edge-case tests (CLAUDE.md Part 3, "Contract-Level").
+//!
+//! These run under the `mock-verifier` feature so we can exercise the full
+//! `transact` orchestration — validation order, double-spend, stale root,
+//! duplicate nullifier, extData binding, tree-full, and the Merkle frontier /
+//! root-ring correctness — without a real Groth16 proof from the circuit. The
+//! real BN254 pairing path is compiled unconditionally and is checked by the
+//! verifier unit test (`tests/verifier.rs`); only the *acceptance* of a proof is
+//! mocked here, never the pairing math.
+//!
+//! Mock convention (see `verifier::mock`): a proof with `a == [0xAA; 64]` is
+//! accepted; anything else is `ProofInvalid`.
+
+#![cfg(all(test, feature = "mock-verifier"))]
+
+extern crate std;
+use std::vec::Vec as StdVec;
+
+use soroban_sdk::{
+    testutils::Address as _, Address, Bytes, BytesN, Env,
+};
+
+use crate::{Config, Error, ExtData, Proof, PublicSignals, VeilContract, VeilContractClient};
+
+const LEVELS: u32 = 20;
+const ROOT_HISTORY: u32 = 64;
+
+// ── harness ──────────────────────────────────────────────────────────────
+
+struct Harness {
+    env: Env,
+    client: VeilContractClient<'static>,
+}
+
+fn setup() -> Harness {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(VeilContract, ());
+    let client = VeilContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.init(
+        &admin,
+        &Config { levels: LEVELS, root_history_size: ROOT_HISTORY },
+    );
+    Harness { env, client }
+}
+
+fn bn(env: &Env, byte: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[byte; 32])
+}
+
+/// A field element from a small u64 (big-endian, like the SDK encodes amounts).
+fn fe(env: &Env, v: u64) -> BytesN<32> {
+    let mut a = [0u8; 32];
+    a[24..].copy_from_slice(&v.to_be_bytes());
+    BytesN::from_array(env, &a)
+}
+
+/// The "valid proof" sentinel for the mock verifier.
+fn valid_proof(env: &Env) -> Proof {
+    Proof {
+        a: BytesN::from_array(env, &[0xAA; 64]),
+        b: BytesN::from_array(env, &[0u8; 128]),
+        c: BytesN::from_array(env, &[0u8; 64]),
+    }
+}
+
+/// An empty ExtData (default identities, no ciphertexts). The caller fills in
+/// the matching `ext_data_hash` on the signals via `with_ext_hash`.
+fn empty_ext(env: &Env) -> ExtData {
+    ExtData {
+        recipient: bn(env, 0),
+        relayer: bn(env, 0),
+        fee: 0,
+        ciphertext0: Bytes::new(env),
+        ciphertext1: Bytes::new(env),
+        view_tag0: 0,
+        view_tag1: 0,
+    }
+}
+
+/// Recompute extDataHash exactly as the contract does (INTERFACES §4) so test
+/// signals bind correctly. Mirrors `lib::hash_ext_data`.
+fn ext_data_hash(env: &Env, ext: &ExtData) -> BytesN<32> {
+    use soroban_sdk::crypto::bn254::Bn254Fr;
+    let mut buf = Bytes::new(env);
+    buf.append(&Bytes::from_array(env, &ext.recipient.to_array()));
+    buf.append(&Bytes::from_array(env, &ext.relayer.to_array()));
+    buf.append(&Bytes::from_array(env, &ext.fee.to_be_bytes()));
+    for ct in [&ext.ciphertext0, &ext.ciphertext1] {
+        buf.append(&Bytes::from_array(env, &ct.len().to_be_bytes()));
+        buf.append(ct);
+    }
+    buf.append(&Bytes::from_array(env, &[ext.view_tag0 as u8]));
+    buf.append(&Bytes::from_array(env, &[ext.view_tag1 as u8]));
+    let digest = env.crypto().keccak256(&buf);
+    Bn254Fr::from_bytes(digest.into()).to_bytes()
+}
+
+/// Build well-formed signals for a transfer against `root`, with the given
+/// distinct nullifiers and output commitments, binding `ext`.
+fn signals(
+    env: &Env,
+    root: &BytesN<32>,
+    ext: &ExtData,
+    nf0: u8,
+    nf1: u8,
+    cm0: u8,
+    cm1: u8,
+) -> PublicSignals {
+    PublicSignals {
+        root: root.clone(),
+        public_amount: bn(env, 0),
+        ext_data_hash: ext_data_hash(env, ext),
+        nullifier0: bn(env, nf0),
+        nullifier1: bn(env, nf1),
+        commitment0: fe(env, cm0 as u64 + 1000),
+        commitment1: fe(env, cm1 as u64 + 2000),
+    }
+}
+
+// ── tests ──────────────────────────────────────────────────────────────────
+
+/// init seeds a non-zero genesis root, an empty leaf count, and a config.
+#[test]
+fn init_seeds_genesis_root() {
+    let h = setup();
+    let root = h.client.current_root();
+    assert_ne!(root.to_array(), [0u8; 32], "genesis root must be non-zero");
+    assert!(h.client.is_known_root(&root), "genesis root must be known");
+    assert_eq!(h.client.next_leaf_index(), 0);
+    let cfg = h.client.get_config();
+    assert_eq!(cfg.levels, LEVELS);
+    assert_eq!(cfg.root_history_size, ROOT_HISTORY);
+}
+
+/// Happy path: a valid 2-out transfer inserts two leaves, advances the root,
+/// and marks both nullifiers spent.
+#[test]
+fn happy_path_inserts_and_advances() {
+    let h = setup();
+    let root0 = h.client.current_root();
+    let ext = empty_ext(&h.env);
+    let sig = signals(&h.env, &root0, &ext, 1, 2, 3, 4);
+
+    h.client.transact(&valid_proof(&h.env), &sig, &ext);
+
+    assert_eq!(h.client.next_leaf_index(), 2, "two leaves inserted");
+    let root1 = h.client.current_root();
+    assert_ne!(root1, root0, "root advanced");
+    assert!(h.client.is_known_root(&root1), "new root known");
+    assert!(h.client.is_known_root(&root0), "old root still in window");
+    assert!(h.client.is_spent(&bn(&h.env, 1)));
+    assert!(h.client.is_spent(&bn(&h.env, 2)));
+}
+
+/// Double-spend: reusing a spent nullifier in a later tx is rejected.
+#[test]
+fn double_spend_rejected() {
+    let h = setup();
+    let ext = empty_ext(&h.env);
+    let root0 = h.client.current_root();
+    let s1 = signals(&h.env, &root0, &ext, 1, 2, 3, 4);
+    h.client.transact(&valid_proof(&h.env), &s1, &ext);
+
+    // Reuse nullifier 1 against the new root.
+    let root1 = h.client.current_root();
+    let s2 = signals(&h.env, &root1, &ext, 1, 9, 5, 6);
+    let err = h
+        .client
+        .try_transact(&valid_proof(&h.env), &s2, &ext)
+        .err()
+        .unwrap()
+        .unwrap();
+    assert_eq!(err, Error::NullifierSpent);
+    // State unchanged by the rejected tx.
+    assert_eq!(h.client.next_leaf_index(), 2);
+}
+
+/// Stale / unknown root: a proof against a root never in the window is rejected,
+/// with no mutation.
+#[test]
+fn unknown_root_rejected() {
+    let h = setup();
+    let ext = empty_ext(&h.env);
+    let bogus = bn(&h.env, 0x77);
+    let s = signals(&h.env, &bogus, &ext, 1, 2, 3, 4);
+    let err = h
+        .client
+        .try_transact(&valid_proof(&h.env), &s, &ext)
+        .err()
+        .unwrap()
+        .unwrap();
+    assert_eq!(err, Error::UnknownRoot);
+    assert_eq!(h.client.next_leaf_index(), 0, "no mutation on reject");
+}
+
+/// Duplicate nullifier: the same note used as both inputs is rejected.
+#[test]
+fn duplicate_nullifier_rejected() {
+    let h = setup();
+    let ext = empty_ext(&h.env);
+    let root0 = h.client.current_root();
+    let s = signals(&h.env, &root0, &ext, 7, 7, 3, 4);
+    let err = h
+        .client
+        .try_transact(&valid_proof(&h.env), &s, &ext)
+        .err()
+        .unwrap()
+        .unwrap();
+    assert_eq!(err, Error::DuplicateNullifier);
+}
+
+/// extDataHash mismatch: if the bound ExtData doesn't match the signal's hash
+/// (a relayer tampering with recipient/fee/ciphertext), reject.
+#[test]
+fn ext_data_mismatch_rejected() {
+    let h = setup();
+    let root0 = h.client.current_root();
+    let ext = empty_ext(&h.env);
+    // Build signals bound to `ext`, then submit with a *different* ExtData.
+    let s = signals(&h.env, &root0, &ext, 1, 2, 3, 4);
+    let mut tampered = empty_ext(&h.env);
+    tampered.fee = 999; // changes the hash
+    let err = h
+        .client
+        .try_transact(&valid_proof(&h.env), &s, &tampered)
+        .err()
+        .unwrap()
+        .unwrap();
+    assert_eq!(err, Error::ExtDataMismatch);
+    assert_eq!(h.client.next_leaf_index(), 0);
+}
+
+/// Invalid proof: a non-sentinel proof fails the (mock) verifier — and crucially
+/// nothing is mutated, proving verify precedes effect.
+#[test]
+fn invalid_proof_rejected_before_effect() {
+    let h = setup();
+    let root0 = h.client.current_root();
+    let ext = empty_ext(&h.env);
+    let s = signals(&h.env, &root0, &ext, 1, 2, 3, 4);
+    let bad = Proof {
+        a: BytesN::from_array(&h.env, &[0x11; 64]), // not the sentinel
+        b: BytesN::from_array(&h.env, &[0u8; 128]),
+        c: BytesN::from_array(&h.env, &[0u8; 64]),
+    };
+    let err = h.client.try_transact(&bad, &s, &ext).err().unwrap().unwrap();
+    assert_eq!(err, Error::ProofInvalid);
+    // Ordering proof: nullifiers NOT marked, no leaves inserted.
+    assert!(!h.client.is_spent(&bn(&h.env, 1)));
+    assert!(!h.client.is_spent(&bn(&h.env, 2)));
+    assert_eq!(h.client.next_leaf_index(), 0);
+}
+
+/// Non-zero publicAmount is the (unbuilt) Phase-2 path and is rejected cleanly.
+/// This also confirms settlement runs AFTER effect would have — but since it
+/// returns Err, the panic rolls back the whole tx (Soroban semantics).
+#[test]
+fn nonzero_public_amount_rejected_phase1() {
+    let h = setup();
+    let root0 = h.client.current_root();
+    let ext = empty_ext(&h.env);
+    let mut s = signals(&h.env, &root0, &ext, 1, 2, 3, 4);
+    s.public_amount = fe(&h.env, 5);
+    let err = h
+        .client
+        .try_transact(&valid_proof(&h.env), &s, &ext)
+        .err()
+        .unwrap()
+        .unwrap();
+    assert_eq!(err, Error::InsufficientFunds);
+    // Rolled back: no state change despite effect running before settlement.
+    assert_eq!(h.client.next_leaf_index(), 0);
+    assert!(!h.client.is_spent(&bn(&h.env, 1)));
+}
+
+/// The Merkle root after a fixed insert sequence is deterministic and
+/// reproducible — the SDK must be able to mirror it. We assert that the same
+/// inputs from a fresh contract yield the identical root.
+#[test]
+fn merkle_root_is_deterministic() {
+    let run = || {
+        let h = setup();
+        let ext = empty_ext(&h.env);
+        // three transfers, distinct nullifiers each time
+        for i in 0..3u8 {
+            let root = h.client.current_root();
+            let s = signals(
+                &h.env,
+                &root,
+                &ext,
+                10 + i * 2,
+                11 + i * 2,
+                100 + i,
+                200 + i,
+            );
+            h.client.transact(&valid_proof(&h.env), &s, &ext);
+        }
+        (h.client.current_root().to_array(), h.client.next_leaf_index())
+    };
+    let (root_a, idx_a) = run();
+    let (root_b, idx_b) = run();
+    assert_eq!(root_a, root_b, "root must be reproducible across runs");
+    assert_eq!(idx_a, 6);
+    assert_eq!(idx_b, 6);
+}
+
+/// The level-0 hash of the first two leaves equals `veil_crypto::compress(cm0,
+/// cm1)` — i.e. the contract's tree uses the SAME Poseidon the SDK uses. We
+/// reconstruct the expected depth-20 root off-chain and compare to the contract.
+#[test]
+fn first_root_matches_offchain_reconstruction() {
+    use veil_crypto::{compress, fr_from_be_bytes, fr_to_be_bytes, zero_leaf};
+
+    let h = setup();
+    let ext = empty_ext(&h.env);
+    let root0 = h.client.current_root();
+    let cm0 = fe(&h.env, 1003);
+    let cm1 = fe(&h.env, 2004);
+    let s = PublicSignals {
+        root: root0,
+        public_amount: bn(&h.env, 0),
+        ext_data_hash: ext_data_hash(&h.env, &ext),
+        nullifier0: bn(&h.env, 1),
+        nullifier1: bn(&h.env, 2),
+        commitment0: cm0.clone(),
+        commitment1: cm1.clone(),
+    };
+    h.client.transact(&valid_proof(&h.env), &s, &ext);
+    let on_chain = h.client.current_root().to_array();
+
+    // Off-chain reconstruction of the depth-20 root for leaves [cm0, cm1] at
+    // positions 0,1 with all other leaves empty.
+    // level-0 parent of the two real leaves:
+    let mut node = compress(
+        fr_from_be_bytes(&cm0.to_array()),
+        fr_from_be_bytes(&cm1.to_array()),
+    );
+    // empty subtree hashes
+    let mut zero = zero_leaf();
+    let mut zeros = StdVec::new();
+    zeros.push(zero);
+    for _ in 1..LEVELS {
+        zero = compress(zero, zero);
+        zeros.push(zero);
+    }
+    // node sits at level-1 index 0 (left child all the way up); pair with the
+    // empty subtree at each level.
+    for z in zeros.iter().take(LEVELS as usize).skip(1) {
+        node = compress(node, *z);
+    }
+    let expected = fr_to_be_bytes(&node);
+    assert_eq!(on_chain, expected, "contract root must match SDK reconstruction");
+}
+
+/// Old roots age out of the ring after `root_history_size` inserts, but remain
+/// valid within the window. We can't cheaply do 64 inserts here for the full
+/// eviction (would need 64 distinct valid txs), so we assert the window holds
+/// for several inserts and the current root is always known.
+#[test]
+fn root_history_window_holds() {
+    let h = setup();
+    let ext = empty_ext(&h.env);
+    let mut roots = StdVec::new();
+    roots.push(h.client.current_root());
+    for i in 0..5u8 {
+        let root = h.client.current_root();
+        let s = signals(&h.env, &root, &ext, 20 + i * 2, 21 + i * 2, 50 + i, 60 + i);
+        h.client.transact(&valid_proof(&h.env), &s, &ext);
+        roots.push(h.client.current_root());
+    }
+    // every recorded root is still within the (64-wide) window
+    for r in roots.iter() {
+        assert!(h.client.is_known_root(r), "root should still be known");
+    }
+}
+
+/// A spend can target ANY root in the window, not just the latest (stale-root
+/// concurrency). Prove against root0 after the tree has already advanced.
+#[test]
+fn spend_against_older_root_in_window() {
+    let h = setup();
+    let ext = empty_ext(&h.env);
+    let root0 = h.client.current_root();
+    // advance the tree once
+    let s1 = signals(&h.env, &root0, &ext, 1, 2, 3, 4);
+    h.client.transact(&valid_proof(&h.env), &s1, &ext);
+    // now prove against the OLD root0 (still in window) with fresh nullifiers
+    let s2 = signals(&h.env, &root0, &ext, 5, 6, 7, 8);
+    h.client.transact(&valid_proof(&h.env), &s2, &ext);
+    assert_eq!(h.client.next_leaf_index(), 4);
+}

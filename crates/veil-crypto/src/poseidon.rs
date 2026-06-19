@@ -1,20 +1,69 @@
-//! Poseidon wrappers (circomlib-compatible, BN254).
+//! Poseidon permutation (circomlib-compatible, BN254), `no_std`.
 //!
-//! `new_circom(width)` selects the circomlib parameter set for `width` inputs.
-//! We only need widths 1, 2 and 3 for Veil:
-//!   * width 1 — public key derivation `pk = Poseidon(sk)`
-//!   * width 2 — Merkle parent `compress(l, r)` and key derivation
-//!   * width 3 — commitment, signature and nullifier
+//! Implemented directly over `ark-bn254` `Fr` so the crate is truly `no_std`
+//! (the Soroban contract target `wasm32v1-none` has no `std`). The round
+//! constants and MDS matrices in [`crate::poseidon_constants`] are the exact
+//! Grain-LFSR circomlib parameters (extracted from `light-poseidon`); the
+//! cross-impl test asserts this implementation is bit-identical to both
+//! `light-poseidon` (dev-only) and the circom witness.
+//!
+//! State layout matches circomlib `Poseidon(width)`: `t = width + 1`, capacity
+//! element `state[0] = 0`, the `width` inputs at `state[1..t]`, output `state[0]`.
 
 use ark_bn254::Fr;
-use light_poseidon::{Poseidon, PoseidonHasher};
+use ark_ff::Zero;
 
-/// Hash an arbitrary-width input vector with the circomlib parameter set for
-/// that width. Panics on unsupported widths (1..=12) — callers use 1/2/3.
+use crate::poseidon_constants::{params_for_width, PoseidonParams};
+
+#[inline]
+fn pow5(x: Fr) -> Fr {
+    let x2 = x * x;
+    let x4 = x2 * x2;
+    x4 * x
+}
+
+fn permute(p: &PoseidonParams, state: &mut [Fr; 4]) {
+    let t = p.t;
+    let half_full = p.full_rounds / 2;
+    let rounds = p.full_rounds + p.partial_rounds;
+
+    for r in 0..rounds {
+        // add round constants
+        for i in 0..t {
+            state[i] += p.ark[r * t + i];
+        }
+        // S-box: x^5 on all elements in full rounds, on state[0] only in partial
+        let is_full = r < half_full || r >= half_full + p.partial_rounds;
+        if is_full {
+            for s in state.iter_mut().take(t) {
+                *s = pow5(*s);
+            }
+        } else {
+            state[0] = pow5(state[0]);
+        }
+        // MDS mix
+        let mut next = [Fr::zero(); 4];
+        for i in 0..t {
+            let mut acc = Fr::zero();
+            for j in 0..t {
+                acc += p.mds[i][j] * state[j];
+            }
+            next[i] = acc;
+        }
+        *state = next;
+    }
+}
+
+/// Hash an input vector of width 1, 2 or 3 with the circomlib parameter set.
 pub fn hashn(inputs: &[Fr]) -> Fr {
-    let mut p = Poseidon::<Fr>::new_circom(inputs.len())
-        .expect("unsupported poseidon width");
-    p.hash(inputs).expect("poseidon hash failed")
+    let p = params_for_width(inputs.len());
+    let mut state = [Fr::zero(); 4];
+    // state[0] is the capacity (0); inputs occupy 1..t.
+    for (i, inp) in inputs.iter().enumerate() {
+        state[i + 1] = *inp;
+    }
+    permute(p, &mut state);
+    state[0]
 }
 
 /// `Poseidon(a)` — single input (public-key derivation).
@@ -38,11 +87,8 @@ pub fn compress(left: Fr, right: Fr) -> Fr {
     hash2(left, right)
 }
 
-/// The empty-leaf value `Zero(0)`. Defined as `Poseidon(0)` so it is a fixed,
-/// non-trivial field element that real commitments (themselves Poseidon
-/// outputs) will never collide with by construction. The contract precomputes
-/// `Zero(i+1) = compress(Zero(i), Zero(i))` from this seed; the SDK uses the
-/// same value when reconstructing the frontier, so both derive identical roots.
+/// The empty-leaf value `Zero(0) = Poseidon(0)`. A fixed, non-trivial field
+/// element real commitments (themselves Poseidon outputs) never collide with.
 pub fn zero_leaf() -> Fr {
-    hash1(Fr::from(0u64))
+    hash1(Fr::zero())
 }

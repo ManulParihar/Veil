@@ -14,10 +14,10 @@ for the full architecture, INTERFACES.md for the frozen cross-plane contracts).
 | 1 | Architecture decision: Groth16 path | ✅ | soroban-sdk 26.1 has native `Bn254::pairing_check` → Poseidon-BN254 + on-chain BN254 Groth16. Honors CLAUDE.md + fits budget. No conflict. |
 | 2 | **GATE**: veil-crypto Poseidon cross-impl | ✅ | `crates/veil-crypto`. light-poseidon 0.4 + ark 0.5. Poseidon(1,2) == circom witness. 4/4 tests pass. Builds no_std wasm32. Committed `4cc01d8`. |
 | 3 | INTERFACES.md frozen spec | ✅ | public-signal order, extDataHash def, events, VK format, versions. |
-| 4 | circuits (PLANE 2) | 🟡 | transaction.circom compiles: 26.8k constraints, 7 pub inputs. Trusted setup running (ptau pow 15). TODO: circom_tester tests + prove.sh verify. |
+| 4 | circuits (PLANE 2) | ✅ | Committed `932a6df`. 26.8k constraints, 7 pub signals. Setup done (zkey+vkey). 4/4 circom tests pass (incl in-circuit pk/cm/nf == pinned vectors). Real proof generates+verifies. Sample proof: build/proof.json, build/public.json. |
 | 5 | veil-contract (PLANE 3) | 🟡 | AGENT dispatched. Soroban contract, native Bn254 verifier, merkle/nullifier/storage/transact + tests. |
-| 6 | veil-sdk (PLANE 4a) | 🟡 | AGENT dispatched. keys/note/encrypt/scan/prove/tx + tests. |
-| 7 | indexer (PLANE 4b) | 🟡 | AGENT dispatched. ingest/checkpoint/store(sqlite)/api + tests. |
+| 6 | veil-sdk (PLANE 4a) | ✅ | keys/note/encrypt/scan/merkle_tree/tx/prove + Wallet facade. 28 tests pass (1 `#[ignore]` = real snarkjs proof, needs circuit artifacts); clippy clean. X25519 enc key via HKDF-SHA256(seed,"veil-enc"); ChaCha20Poly1305 AEAD; view_tag=sha256(shared)[0]; on-wire ct blob = ephemeral_pub(32)\|\|aead_ct. extDataHash per INTERFACES §4. Witness JSON field names match transaction.circom. |
+| 7 | indexer (PLANE 4b) | ✅ | `indexer/`. SQLite (rusqlite bundled) store w/ idempotent upserts; ingest loop over `EventSource` trait (MockSource + StellarRpcSource) w/ checkpoint/resume + finality lag (default 5); axum read API (/notes,/nullifiers,/tree/root,/health). 19/19 tests green, clippy clean. Parses INTERFACES §5 events; Transact→latest root for /tree/root. |
 | 8 | Integration e2e | ⏳ | SDK→proof→contract verify+insert; drop real VK into contract `vk.rs`. |
 | 9 | Testnet validation | ⏳ | friendbot-funded deploy + simulateTransaction budget check (if stellar CLI installs & network reachable). |
 | 10 | Review + README + commit | ⏳ | code-review, honest README, final commit. |

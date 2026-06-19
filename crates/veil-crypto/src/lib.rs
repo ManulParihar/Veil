@@ -29,6 +29,7 @@
 pub mod field;
 pub mod note;
 pub mod poseidon;
+mod poseidon_constants;
 
 pub use ark_bn254::Fr;
 pub use field::{fr_from_be_bytes, fr_from_u64, fr_to_be_bytes};
