@@ -65,5 +65,16 @@ test("create → fund → deposit (real proof + on-chain)", async ({ page }) => 
   await page.screenshot({ path: `${SHOTS}/09-balance-60.png`, fullPage: true });
   console.log("TRANSFER_TX:", sendHash.replace(/\s+/g, " ").trim());
 
+  // ── recovery: reset, re-import the seed, balance must come back ──
+  // We sent to OURSELVES, so on recovery the scan finds both the 60 change note
+  // and the 40 self-received note (spent input reconciled away) → 100 total.
+  await page.getByText("reset", { exact: true }).click();
+  await expect(page.getByTestId("create-btn")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "I have a seed" }).click();
+  await page.getByTestId("seed-input").fill(seed);
+  await page.getByTestId("import-btn").click();
+  await expect(page.getByTestId("recovered-balance")).toContainText("100", { timeout: 60_000 });
+  await page.screenshot({ path: `${SHOTS}/10-recovered.png`, fullPage: true });
+
   expect(errors.filter((e) => !/favicon|Download the React/i.test(e))).toEqual([]);
 });

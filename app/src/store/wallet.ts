@@ -4,7 +4,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import {
-  initCrypto, deriveKeys, fieldToBytes, fromHex, toHex, commitment, type Keys, type Note,
+  initCrypto, deriveKeys, fieldToBytes, fromHex, toHex, commitment, nullifier, type Keys, type Note,
 } from "../lib/crypto";
 import { ClientMerkleTree } from "../lib/merkleTree";
 import { buildDeposit, buildTransfer, buildWithdraw, type WitnessBundle } from "../lib/witness";
@@ -178,7 +178,7 @@ export const useWallet = create<Internal>()(
         },
 
         scanForNotes: async () => {
-          const { seedHex } = get();
+          const { seedHex, feeAccount } = get();
           if (!seedHex) return 0;
           const keys = ensureKeys(seedHex);
           set({ syncing: true });
@@ -192,13 +192,26 @@ export const useWallet = create<Internal>()(
             const fresh = found
               .filter((f) => !existing.has(f.leafIndex))
               .map<StoredNote>((f) => ({ note: f.note, leafIndex: f.leafIndex, spent: false, createdAt: now() }));
-            if (fresh.length) {
-              set((s) => {
-                const notes = [...s.notes, ...fresh];
-                return { notes, balanceShielded: totalUnspent(notes) };
-              });
+
+            // Reconcile spend state on-chain: a recovered (or stale) note whose
+            // nullifier is already published must be marked spent, else the
+            // balance double-counts and a spend would fail with NullifierSpent.
+            let notes = [...get().notes, ...fresh];
+            if (feeAccount) {
+              notes = await Promise.all(
+                notes.map(async (n) => {
+                  if (n.spent || n.leafIndex == null) return n;
+                  try {
+                    const nf = nullifier(n.note, keys.spendKey, BigInt(n.leafIndex));
+                    const spent = await chain.isSpent(feeAccount.publicKey, fieldToBytes(nf));
+                    return spent ? { ...n, spent: true } : n;
+                  } catch {
+                    return n;
+                  }
+                })
+              );
             }
-            set({ nextLeafIndex: T().length });
+            set({ notes, balanceShielded: totalUnspent(notes), nextLeafIndex: T().length });
             return fresh.length;
           } finally {
             set({ syncing: false });

@@ -4,8 +4,12 @@ import { useWallet } from "../store/wallet";
 import { Logo, Spinner, AddressBadge, useToast } from "../components/ui";
 
 export default function Onboarding() {
-  const { initialised, seedHex, feeAccount, createIdentity, importIdentity, fundFeeAccount } = useWallet();
+  const {
+    initialised, seedHex, feeAccount, balanceShielded, notes,
+    createIdentity, importIdentity, fundFeeAccount, scanForNotes,
+  } = useWallet();
   const [mode, setMode] = useState<"intro" | "import">("intro");
+  const [recovered, setRecovered] = useState(false);
   const [seedInput, setSeedInput] = useState("");
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -13,35 +17,61 @@ export default function Onboarding() {
 
   const create = async () => {
     setBusy(true);
+    setRecovered(false);
     try { await createIdentity(); } catch (e: any) { toast.push(e.message, "err"); } finally { setBusy(false); }
   };
   const doImport = async () => {
     const hex = seedInput.trim().replace(/^0x/, "");
     if (hex.length !== 64 || !/^[0-9a-fA-F]+$/.test(hex)) { toast.push("Seed must be 64 hex characters", "err"); return; }
     setBusy(true);
-    try { await importIdentity(hex); } catch (e: any) { toast.push(e.message, "err"); } finally { setBusy(false); }
+    try {
+      await importIdentity(hex);
+      // recovery: rediscover this seed's notes from the chain (restores balance)
+      const n = await scanForNotes();
+      setRecovered(true);
+      toast.push(n > 0 ? `Recovered ${n} note${n > 1 ? "s" : ""}` : "Identity restored — no notes found yet", n > 0 ? "ok" : "info");
+    } catch (e: any) { toast.push(e.message, "err"); } finally { setBusy(false); }
   };
   const fund = async () => {
     setBusy(true);
-    try { await fundFeeAccount(); toast.push("Fee account funded", "ok"); nav("/"); }
-    catch (e: any) { toast.push(e.message, "err"); } finally { setBusy(false); }
+    try {
+      await fundFeeAccount();
+      // with a funded account we can reconcile spent state precisely
+      if (recovered) await scanForNotes().catch(() => {});
+      toast.push("Fee account funded", "ok");
+      nav("/");
+    } catch (e: any) { toast.push(e.message, "err"); } finally { setBusy(false); }
   };
 
-  // Step 2: identity exists → back up seed + fund fee account
+  // Step 2: identity exists → (recovery) welcome back / (create) back up seed, then fund
   if (initialised && seedHex) {
     return (
       <div className="min-h-full grid place-items-center p-6">
         <div className="w-full max-w-lg space-y-5 animate-fade-in">
           <div className="text-center">
             <Logo className="h-12 w-12 mx-auto" />
-            <h1 className="text-2xl font-bold mt-3">Back up your identity</h1>
-            <p className="text-veil-muted mt-1">This 32-byte seed controls your private notes. Store it safely — it cannot be recovered.</p>
+            <h1 className="text-2xl font-bold mt-3">{recovered ? "Welcome back" : "Back up your identity"}</h1>
+            <p className="text-veil-muted mt-1">
+              {recovered
+                ? "Your identity was restored from your seed. Fund a fee-payer account to start transacting."
+                : "This 32-byte seed controls your private notes. Store it safely — it cannot be recovered."}
+            </p>
           </div>
-          <div className="card p-5">
-            <div className="label">Your recovery seed</div>
-            <div data-testid="seed-display" className="mono text-sm break-all bg-veil-surface rounded-xl p-3 border border-veil-border">{seedHex}</div>
-            <div className="mt-3"><AddressBadge value={seedHex} label="seed" testid="copy-seed" /></div>
-          </div>
+          {recovered ? (
+            <div className="card p-5" data-testid="recovered-summary">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-veil-muted">Recovered shielded balance</div>
+                <div className="text-xs text-veil-muted">{notes.filter((n) => !n.spent).length} notes</div>
+              </div>
+              <div data-testid="recovered-balance" className="text-3xl font-bold mt-1 tabular-nums">{balanceShielded.toString()} <span className="text-lg text-veil-muted">VEIL</span></div>
+            </div>
+          ) : (
+            <div className="card p-5">
+              <div className="label">Your recovery seed</div>
+              <div data-testid="seed-display" className="mono text-sm break-all bg-veil-surface rounded-xl p-3 border border-veil-border">{seedHex}</div>
+              <div className="mt-3"><AddressBadge value={seedHex} label="seed" testid="copy-seed" /></div>
+            </div>
+          )}
           <div className="card p-5">
             <div className="font-medium">Fund your fee-payer account</div>
             <p className="text-sm text-veil-muted mt-1">A separate Stellar account pays network fees. Fund it instantly from the testnet friendbot.</p>
