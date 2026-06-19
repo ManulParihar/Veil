@@ -17,7 +17,9 @@ extern crate std;
 use std::vec::Vec as StdVec;
 
 use soroban_sdk::{
-    testutils::Address as _, Address, Bytes, BytesN, Env,
+    testutils::Address as _,
+    token::{StellarAssetClient, TokenClient},
+    Address, Bytes, BytesN, Env,
 };
 
 use crate::{Config, Error, ExtData, Proof, PublicSignals, VeilContract, VeilContractClient};
@@ -30,19 +32,30 @@ const ROOT_HISTORY: u32 = 64;
 struct Harness {
     env: Env,
     client: VeilContractClient<'static>,
+    pool: Address,
+    token_admin: StellarAssetClient<'static>,
+    token: TokenClient<'static>,
 }
 
 fn setup() -> Harness {
     let env = Env::default();
-    env.mock_all_auths();
+    // the depositor authorizes the token.transfer as a NON-root sub-invocation
+    // under `transact`, so we must allow non-root auth in tests.
+    env.mock_all_auths_allowing_non_root_auth();
     let contract_id = env.register(VeilContract, ());
     let client = VeilContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
+    // a test Stellar Asset Contract to stand in for native XLM
+    let sac = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_id = sac.address();
     client.init(
         &admin,
         &Config { levels: LEVELS, root_history_size: ROOT_HISTORY },
+        &token_id,
     );
-    Harness { env, client }
+    let token_admin = StellarAssetClient::new(&env, &token_id);
+    let token = TokenClient::new(&env, &token_id);
+    Harness { env, client, pool: contract_id, token_admin, token }
 }
 
 fn bn(env: &Env, byte: u8) -> BytesN<32> {
@@ -68,6 +81,10 @@ fn valid_proof(env: &Env) -> Proof {
 /// An empty ExtData (default identities, no ciphertexts). The caller fills in
 /// the matching `ext_data_hash` on the signals via `with_ext_hash`.
 fn empty_ext(env: &Env) -> ExtData {
+    ext_with_settlement(env, &Address::generate(env))
+}
+
+fn ext_with_settlement(env: &Env, settlement: &Address) -> ExtData {
     ExtData {
         recipient: bn(env, 0),
         relayer: bn(env, 0),
@@ -76,25 +93,13 @@ fn empty_ext(env: &Env) -> ExtData {
         ciphertext1: Bytes::new(env),
         view_tag0: 0,
         view_tag1: 0,
+        settlement_address: settlement.clone(),
     }
 }
 
-/// Recompute extDataHash exactly as the contract does (INTERFACES §4) so test
-/// signals bind correctly. Mirrors `lib::hash_ext_data`.
+/// extDataHash via the contract's own logic — no replica to drift.
 fn ext_data_hash(env: &Env, ext: &ExtData) -> BytesN<32> {
-    use soroban_sdk::crypto::bn254::Bn254Fr;
-    let mut buf = Bytes::new(env);
-    buf.append(&Bytes::from_array(env, &ext.recipient.to_array()));
-    buf.append(&Bytes::from_array(env, &ext.relayer.to_array()));
-    buf.append(&Bytes::from_array(env, &ext.fee.to_be_bytes()));
-    for ct in [&ext.ciphertext0, &ext.ciphertext1] {
-        buf.append(&Bytes::from_array(env, &ct.len().to_be_bytes()));
-        buf.append(ct);
-    }
-    buf.append(&Bytes::from_array(env, &[ext.view_tag0 as u8]));
-    buf.append(&Bytes::from_array(env, &[ext.view_tag1 as u8]));
-    let digest = env.crypto().keccak256(&buf);
-    Bn254Fr::from_bytes(digest.into()).to_bytes()
+    crate::hash_ext_data(env, ext)
 }
 
 /// Build well-formed signals for a transfer against `root`, with the given
@@ -253,18 +258,67 @@ fn invalid_proof_rejected_before_effect() {
     assert_eq!(h.client.next_leaf_index(), 0);
 }
 
-/// Non-zero publicAmount is accepted on the testnet build (deposit mints /
-/// withdraw burns; value conservation is enforced in-circuit). State advances.
+/// `publicAmount = r - v` encodes a withdraw of `v`.
+fn neg_fe(env: &Env, v: u64) -> BytesN<32> {
+    let mut vb = [0u8; 32];
+    vb[24..].copy_from_slice(&v.to_be_bytes());
+    BytesN::from_array(env, &crate::sub_be(&crate::R_BE, &vb))
+}
+
+/// DEPOSIT (publicAmount > 0) pulls real tokens from the depositor into the pool.
 #[test]
-fn nonzero_public_amount_accepted_as_mint() {
+fn deposit_pulls_tokens_into_pool() {
     let h = setup();
-    let root0 = h.client.current_root();
-    let ext = empty_ext(&h.env);
-    let mut s = signals(&h.env, &root0, &ext, 1, 2, 3, 4);
-    s.public_amount = fe(&h.env, 5); // a deposit of 5
+    let depositor = Address::generate(&h.env);
+    h.token_admin.mint(&depositor, &1000);
+
+    let ext = ext_with_settlement(&h.env, &depositor);
+    let mut s = signals(&h.env, &h.client.current_root(), &ext, 1, 2, 3, 4);
+    s.public_amount = fe(&h.env, 100); // deposit 100
     h.client.transact(&valid_proof(&h.env), &s, &ext);
-    assert_eq!(h.client.next_leaf_index(), 2, "deposit inserted output notes");
-    assert!(h.client.is_spent(&bn(&h.env, 1)));
+
+    assert_eq!(h.token.balance(&depositor), 900, "100 pulled from depositor");
+    assert_eq!(h.token.balance(&h.pool), 100, "pool custodies 100");
+    assert_eq!(h.client.next_leaf_index(), 2, "output notes inserted");
+}
+
+/// WITHDRAW (publicAmount = r - v) releases real tokens from the pool to the
+/// recipient bound in ExtData.
+#[test]
+fn withdraw_releases_tokens_from_pool() {
+    let h = setup();
+    let depositor = Address::generate(&h.env);
+    h.token_admin.mint(&depositor, &1000);
+
+    // fund the pool: deposit 100
+    let ext_d = ext_with_settlement(&h.env, &depositor);
+    let mut sd = signals(&h.env, &h.client.current_root(), &ext_d, 1, 2, 3, 4);
+    sd.public_amount = fe(&h.env, 100);
+    h.client.transact(&valid_proof(&h.env), &sd, &ext_d);
+    assert_eq!(h.token.balance(&h.pool), 100);
+
+    // withdraw 40 to a fresh recipient
+    let recipient = Address::generate(&h.env);
+    let ext_w = ext_with_settlement(&h.env, &recipient);
+    let mut sw = signals(&h.env, &h.client.current_root(), &ext_w, 5, 6, 7, 8);
+    sw.public_amount = neg_fe(&h.env, 40);
+    h.client.transact(&valid_proof(&h.env), &sw, &ext_w);
+
+    assert_eq!(h.token.balance(&recipient), 40, "recipient received 40");
+    assert_eq!(h.token.balance(&h.pool), 60, "pool retains 60");
+}
+
+/// A withdraw larger than the pool's custody fails (the token transfer reverts
+/// the whole transact).
+#[test]
+#[should_panic]
+fn withdraw_beyond_custody_reverts() {
+    let h = setup();
+    let recipient = Address::generate(&h.env);
+    let ext = ext_with_settlement(&h.env, &recipient);
+    let mut s = signals(&h.env, &h.client.current_root(), &ext, 1, 2, 3, 4);
+    s.public_amount = neg_fe(&h.env, 50); // pool holds 0
+    h.client.transact(&valid_proof(&h.env), &s, &ext);
 }
 
 /// The Merkle root after a fixed insert sequence is deterministic and

@@ -29,7 +29,8 @@ pub use error::Error;
 pub use types::{Config, ExtData, Proof, PublicSignals};
 
 use soroban_sdk::crypto::bn254::Bn254Fr;
-use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env};
+use soroban_sdk::token::TokenClient;
+use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, MuxedAddress};
 
 #[contract]
 pub struct VeilContract;
@@ -39,12 +40,13 @@ impl VeilContract {
     /// One-time setup: record the admin and tree config, precompute the
     /// empty-subtree zeros + frontier, and seed the genesis root so an empty
     /// tree already has a known root. Panics if called twice.
-    pub fn init(env: Env, admin: Address, config: Config) {
+    pub fn init(env: Env, admin: Address, config: Config, token: Address) {
         if storage::is_initialized(&env) {
             panic!("already initialized");
         }
         storage::set_admin(&env, &admin);
         storage::set_config(&env, &config);
+        storage::set_token(&env, &token); // Phase-2 settlement asset (native XLM SAC)
         merkle::init(&env, &config);
         storage::bump_instance(&env);
         storage::bump_tree(&env, &config);
@@ -172,6 +174,14 @@ fn hash_ext_data(env: &Env, ext: &ExtData) -> BytesN<32> {
     // view tags: 1 byte each (low byte of the u32).
     buf.append(&Bytes::from_array(env, &[ext.view_tag0 as u8]));
     buf.append(&Bytes::from_array(env, &[ext.view_tag1 as u8]));
+    // settlement address (Phase 2), bound via its strkey so a withdraw recipient
+    // cannot be redirected: u32-be length || strkey bytes.
+    let addr_str = ext.settlement_address.to_string();
+    let len = addr_str.len() as usize;
+    let mut sbuf = [0u8; 64]; // strkey is ≤ 56 chars
+    addr_str.copy_into_slice(&mut sbuf[..len]);
+    buf.append(&Bytes::from_array(env, &(len as u32).to_be_bytes()));
+    buf.append(&Bytes::from_slice(env, &sbuf[..len]));
 
     let digest = env.crypto().keccak256(&buf);
     // Reduce mod r so it matches the circuit's field-element public input.
@@ -179,24 +189,84 @@ fn hash_ext_data(env: &Env, ext: &ExtData) -> BytesN<32> {
     reduced.to_bytes()
 }
 
-/// Settle a signed public amount. A positive `publicAmount` is a deposit (mint
-/// into the pool); a field-negative one (`r - amount`) is a withdraw (burn).
-/// Value conservation `publicAmount + Σin = Σout` is already enforced in-circuit,
-/// so any accepted `publicAmount` is balanced by the output/input notes.
-///
-/// **Testnet build:** the mint/burn is accepted with NO real asset settlement —
-/// deposits create unbacked shielded test-credits and withdraws simply burn. The
-/// real-asset edge (pull/release a Stellar token via its SAC, gated on auth) is
-/// the documented Phase-2 marker; it slots in here without touching the ZK core.
+/// BN254 scalar field modulus `r`, big-endian — used to recover a withdraw's
+/// magnitude from a field-negative `publicAmount` (`amount = r - publicAmount`).
+pub(crate) const R_BE: [u8; 32] = [
+    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
+    0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91, 0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00, 0x00, 0x01,
+];
+
+enum Settlement {
+    None,
+    Deposit(i128),
+    Withdraw(i128),
+}
+
+/// `a - b` for 32-byte big-endian integers (caller guarantees `a >= b`).
+pub(crate) fn sub_be(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let mut borrow: i16 = 0;
+    for i in (0..32).rev() {
+        let mut d = a[i] as i16 - b[i] as i16 - borrow;
+        if d < 0 {
+            d += 256;
+            borrow = 1;
+        } else {
+            borrow = 0;
+        }
+        out[i] = d as u8;
+    }
+    out
+}
+
+fn low_u64(b: &[u8; 32]) -> u64 {
+    let mut a8 = [0u8; 8];
+    a8.copy_from_slice(&b[24..32]);
+    u64::from_be_bytes(a8)
+}
+
+/// Decode the signed `publicAmount` field element: `0` → transfer; a value below
+/// `2^64` → deposit of that magnitude; a value within `2^64` of `r` (i.e.
+/// `r - amount`) → withdraw. Anything else is out of the valid amount range.
+fn decode_public_amount(pa: &BytesN<32>) -> Result<Settlement, Error> {
+    let b = pa.to_array();
+    if b == [0u8; 32] {
+        return Ok(Settlement::None);
+    }
+    if b[..24].iter().all(|&x| x == 0) {
+        return Ok(Settlement::Deposit(low_u64(&b) as i128));
+    }
+    let neg = sub_be(&R_BE, &b); // r - publicAmount = withdraw magnitude
+    if neg[..24].iter().all(|&x| x == 0) {
+        return Ok(Settlement::Withdraw(low_u64(&neg) as i128));
+    }
+    Err(Error::InsufficientFunds)
+}
+
+/// Settle a signed public amount against the configured Stellar Asset Contract.
+/// DEPOSIT pulls `amount` from `ExtData.settlement_address` (the SAC enforces the
+/// depositor's auth); WITHDRAW releases `amount` from the pool's own custody to
+/// `ExtData.settlement_address` (bound into `extDataHash`). Runs LAST so a failed
+/// transfer atomically reverts the whole `transact`. Value conservation is
+/// already enforced in-circuit, so the moved asset matches the note delta.
 fn settle_public_amount(
     env: &Env,
-    _public_amount: &BytesN<32>,
-    _ext: &ExtData,
+    public_amount: &BytesN<32>,
+    ext: &ExtData,
 ) -> Result<(), Error> {
-    let _ = env;
-    // Phase 2 goes here: decode the sign of `public_amount`, then
-    // token.transfer(user -> contract, amount) on deposit (with require_auth) or
-    // token.transfer(contract -> recipient, amount) on withdraw.
+    match decode_public_amount(public_amount)? {
+        Settlement::None => {}
+        Settlement::Deposit(amount) => {
+            let token = TokenClient::new(env, &storage::token(env));
+            let pool = env.current_contract_address();
+            token.transfer(&ext.settlement_address, &MuxedAddress::from(&pool), &amount);
+        }
+        Settlement::Withdraw(amount) => {
+            let token = TokenClient::new(env, &storage::token(env));
+            let pool = env.current_contract_address();
+            token.transfer(&pool, &MuxedAddress::from(&ext.settlement_address), &amount);
+        }
+    }
     Ok(())
 }
 

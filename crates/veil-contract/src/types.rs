@@ -5,7 +5,7 @@
 //! the host serialization: G1 = 64 bytes `X||Y` BE, G2 = 128 bytes (see
 //! `vk.rs` for the G2 coordinate-ordering note).
 
-use soroban_sdk::{contracttype, Bytes, BytesN};
+use soroban_sdk::{contracttype, Address, Bytes, BytesN};
 
 /// A Groth16 proof. `a`, `c` are G1 (64 bytes); `b` is G2 (128 bytes).
 /// Byte layout matches the snarkjs→`vk.rs` handoff documented in `vk.rs`.
@@ -69,6 +69,14 @@ pub struct ExtData {
     pub view_tag0: u32,
     /// 1-byte view tag for output note 1.
     pub view_tag1: u32,
+    /// Phase-2 settlement counterparty (Stellar address):
+    ///   * DEPOSIT (publicAmount > 0) — the depositor; XLM is pulled from here.
+    ///   * WITHDRAW (publicAmount < 0) — the recipient; XLM is released to here.
+    ///   * TRANSFER (publicAmount == 0) — unused; any valid address (it is still
+    ///     bound into `extDataHash`, so the client must pass a fixed one).
+    /// Bound into `extDataHash` via its strkey so a relayer cannot redirect a
+    /// withdraw.
+    pub settlement_address: Address,
 }
 
 /// Immutable-after-init tree parameters.

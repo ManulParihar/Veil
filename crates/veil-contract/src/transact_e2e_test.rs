@@ -19,10 +19,14 @@
 
 extern crate std;
 
-use soroban_sdk::{testutils::Address as _, Address, Bytes, BytesN, Env};
+use soroban_sdk::{testutils::Address as _, Address, Bytes, BytesN, Env, String};
 
 use crate::transact_fixture::{PROOF_A, PROOF_B, PROOF_C, PUBLIC_SIGNALS};
 use crate::{Config, ExtData, Proof, PublicSignals, VeilContract, VeilContractClient};
+
+/// The fixed settlement address the fixture's extDataHash binds (a transfer, so
+/// no funds move). Mirrored in circuits/scripts/gen_transact_fixture.js.
+const SETTLE_G: &str = "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM";
 
 fn empty_ext(env: &Env) -> ExtData {
     ExtData {
@@ -33,7 +37,12 @@ fn empty_ext(env: &Env) -> ExtData {
         ciphertext1: Bytes::new(env),
         view_tag0: 0,
         view_tag1: 0,
+        settlement_address: Address::from_string(&String::from_str(env, SETTLE_G)),
     }
+}
+
+fn setup_token(env: &Env, admin: &Address) -> Address {
+    env.register_stellar_asset_contract_v2(admin.clone()).address()
 }
 
 fn signals(env: &Env) -> PublicSignals {
@@ -53,12 +62,11 @@ fn signals(env: &Env) -> PublicSignals {
 fn full_transact_with_real_proof_on_host() {
     let env = Env::default();
     env.mock_all_auths();
+    let admin = Address::generate(&env);
     let id = env.register(VeilContract, ());
     let client = VeilContractClient::new(&env, &id);
-    client.init(
-        &Address::generate(&env),
-        &Config { levels: 20, root_history_size: 64 },
-    );
+    let token = setup_token(&env, &admin);
+    client.init(&admin, &Config { levels: 20, root_history_size: 64 }, &token);
 
     // The fixture's root MUST equal this contract's freshly-computed genesis root
     // (Zero(20)); if Poseidon or the zero-subtree derivation drifted, is_known_root
@@ -97,12 +105,11 @@ fn full_transact_with_real_proof_on_host() {
 fn replay_same_proof_is_rejected_as_double_spend() {
     let env = Env::default();
     env.mock_all_auths();
+    let admin = Address::generate(&env);
     let id = env.register(VeilContract, ());
     let client = VeilContractClient::new(&env, &id);
-    client.init(
-        &Address::generate(&env),
-        &Config { levels: 20, root_history_size: 64 },
-    );
+    let token = setup_token(&env, &admin);
+    client.init(&admin, &Config { levels: 20, root_history_size: 64 }, &token);
     let ext = empty_ext(&env);
     let proof = Proof {
         a: BytesN::from_array(&env, &PROOF_A),

@@ -22,6 +22,8 @@ pub enum DataKey {
     // ── instance storage (small, global) ──
     Admin,
     Config,
+    /// Phase-2: the Stellar Asset Contract (SAC) backing the pool (native XLM).
+    Token,
     CurrentRootIndex,
     NextLeafIndex,
     /// Precomputed empty-subtree hashes per level `[0..levels]`, held as a
@@ -72,6 +74,14 @@ pub fn set_config(env: &Env, config: &Config) {
 
 pub fn config(env: &Env) -> Config {
     env.storage().instance().get(&DataKey::Config).unwrap()
+}
+
+pub fn set_token(env: &Env, token: &Address) {
+    env.storage().instance().set(&DataKey::Token, token);
+}
+
+pub fn token(env: &Env) -> Address {
+    env.storage().instance().get(&DataKey::Token).unwrap()
 }
 
 // ── cursors ──

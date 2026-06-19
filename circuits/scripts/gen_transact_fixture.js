@@ -36,8 +36,16 @@ const lit = (b) => "[" + Array.from(b).join(", ") + "]";
 // extDataHash for the EMPTY ExtData, exactly as the contract computes it
 // (INTERFACES §4): recipient(32 z) || relayer(32 z) || fee_be(16 z) ||
 // len(ct0)=0 be(4 z) || len(ct1)=0 be(4 z) || tag0(1 z) || tag1(1 z) = 90 zero bytes.
+// The fixed settlement address the fixture binds (a transfer → no funds move).
+// Mirrored in crates/veil-contract/src/transact_e2e_test.rs (SETTLE_G).
+const SETTLE_G = "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM";
+
 function emptyExtDataHashDec() {
-  const buf = Buffer.alloc(32 + 32 + 16 + 4 + 4 + 1 + 1); // all zero
+  const zeros = Buffer.alloc(32 + 32 + 16 + 4 + 4 + 1 + 1); // recipient..viewtags, all 0
+  const addr = Buffer.from(SETTLE_G, "ascii");
+  const addrLen = Buffer.alloc(4);
+  addrLen.writeUInt32BE(addr.length);
+  const buf = Buffer.concat([zeros, addrLen, addr]); // + settlement strkey binding
   const digestHex = keccak256(buf);
   const reduced = BigInt("0x" + digestHex) % R;
   return reduced.toString();

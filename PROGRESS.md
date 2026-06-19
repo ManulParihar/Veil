@@ -86,7 +86,7 @@ contract's XLM custody balance reconciling.
 
 ## Independent pieces
 
-### P2-A · Contract settlement (crates/veil-contract) — CRITICAL, security-sensitive
+### P2-A · Contract settlement ✅ DONE
 - `init` takes `token: Address` (testnet native-XLM SAC); store it.
 - `settle_public_amount`: decode sign of `publicAmount` —
   `0` → no-op; `0<pa<2^64` → DEPOSIT `token.transfer(from=depositor,to=contract,pa)`;
