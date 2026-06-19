@@ -7,6 +7,7 @@ const NAV = [
   { to: "/", label: "Dashboard", icon: "M3 12l9-9 9 9M5 10v10h14V10" },
   { to: "/deposit", label: "Deposit", icon: "M12 5v14M5 12h14" },
   { to: "/send", label: "Send", icon: "M5 12h14M13 6l6 6-6 6" },
+  { to: "/withdraw", label: "Withdraw", icon: "M12 19V5M5 12l7 7 7-7" },
   { to: "/receive", label: "Receive", icon: "M19 12H5M11 18l-6-6 6-6" },
   { to: "/activity", label: "Activity", icon: "M3 12h4l3 8 4-16 3 8h4" },
 ];

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "../store/wallet";
 import { Logo, Spinner, AddressBadge, useToast } from "../components/ui";
+import { fromStroops } from "../lib/types";
 
 export default function Onboarding() {
   const {
@@ -63,7 +64,7 @@ export default function Onboarding() {
                 <div className="text-sm text-veil-muted">Recovered shielded balance</div>
                 <div className="text-xs text-veil-muted">{notes.filter((n) => !n.spent).length} notes</div>
               </div>
-              <div data-testid="recovered-balance" className="text-3xl font-bold mt-1 tabular-nums">{balanceShielded.toString()} <span className="text-lg text-veil-muted">VEIL</span></div>
+              <div data-testid="recovered-balance" className="text-3xl font-bold mt-1 tabular-nums">{fromStroops(balanceShielded)} <span className="text-lg text-veil-muted">XLM</span></div>
             </div>
           ) : (
             <div className="card p-5">

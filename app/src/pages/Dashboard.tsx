@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../store/wallet";
 import { StatCard, AddressBadge, StatusChip, truncate, Spinner } from "../components/ui";
-import { EXPLORER_TX } from "../lib/types";
+import { EXPLORER_TX, fromStroops } from "../lib/types";
 
 export default function Dashboard() {
   const s = useWallet();
@@ -27,7 +27,7 @@ export default function Dashboard() {
       <div className="card p-7 shadow-glow border-veil-primary/30 bg-gradient-to-br from-veil-primary/10 to-transparent">
         <div className="text-sm text-veil-muted">Shielded balance</div>
         <div data-testid="balance" className="text-5xl font-bold tabular-nums mt-1">
-          {s.balanceShielded.toString()} <span className="text-2xl text-veil-muted">VEIL</span>
+          {fromStroops(s.balanceShielded)} <span className="text-2xl text-veil-muted">XLM</span>
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link to="/deposit" className="btn-primary">Deposit</Link>
@@ -66,7 +66,7 @@ export default function Dashboard() {
                   <StatusChip status={t.status} />
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="tabular-nums">{t.amount.toString()} VEIL</span>
+                  <span className="tabular-nums">{fromStroops(t.amount)} XLM</span>
                   {t.hash && <a href={EXPLORER_TX + t.hash} target="_blank" rel="noreferrer" className="text-xs text-veil-accent hover:underline">{truncate(t.hash, 6, 4)} ↗</a>}
                 </div>
               </div>

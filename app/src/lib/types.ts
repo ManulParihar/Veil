@@ -10,6 +10,27 @@ export const FRIENDBOT = "https://friendbot.stellar.org";
 export const EXPLORER_TX = "https://stellar.expert/explorer/testnet/tx/";
 export const TREE_LEVELS = 20;
 
+/** Note amounts are denominated in stroops (1 XLM = 10^7 stroops). */
+export const STROOPS_PER_XLM = 10_000_000n;
+
+/** Parse a human XLM string (e.g. "1.4") into stroops. */
+export function toStroops(xlm: string): bigint {
+  const s = (xlm || "0").trim();
+  const [whole, frac = ""] = s.split(".");
+  const fracPadded = (frac + "0000000").slice(0, 7);
+  return BigInt(whole || "0") * STROOPS_PER_XLM + BigInt(fracPadded || "0");
+}
+
+/** Format stroops as a human XLM string (trailing zeros trimmed). */
+export function fromStroops(stroops: bigint): string {
+  const neg = stroops < 0n;
+  const v = neg ? -stroops : stroops;
+  const whole = v / STROOPS_PER_XLM;
+  const frac = (v % STROOPS_PER_XLM).toString().padStart(7, "0").replace(/0+$/, "");
+  const out = frac ? `${whole}.${frac}` : `${whole}`;
+  return neg ? `-${out}` : out;
+}
+
 /** A note we own, with its on-chain leaf position and spent state. */
 export interface StoredNote {
   note: Note;

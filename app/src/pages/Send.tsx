@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useWallet } from "../store/wallet";
 import { AmountInput, Spinner, useToast } from "../components/ui";
 import TxProgress from "../components/TxProgress";
+import { toStroops, fromStroops } from "../lib/types";
 
 // A Veil address is encoded as `pubkey.encPubHex` for easy paste/QR.
 function parseAddress(s: string): { pubkey: string; encPub: string } | null {
@@ -22,14 +23,14 @@ export default function Send() {
   const submit = async () => {
     const addr = parseAddress(to);
     if (!addr) { toast.push("Invalid Veil address (expect pubkey.encpub)", "err"); return; }
-    const a = BigInt(amount || "0");
+    const a = toStroops(amount);
     if (a <= 0n) { toast.push("Enter an amount", "err"); return; }
     if (a > balanceShielded) { toast.push("Amount exceeds balance", "err"); return; }
     setBusy(true);
     setStarted(true);
     try {
       await send(addr.pubkey, addr.encPub, a);
-      toast.push(`Sent ${a} VEIL privately`, "ok");
+      toast.push(`Sent ${amount} XLM privately`, "ok");
       setTo(""); setAmount("");
     } catch (e: any) {
       toast.push(e.message ?? "send failed", "err");
@@ -55,7 +56,7 @@ export default function Send() {
         </div>
         <div>
           <div className="label">Amount</div>
-          <AmountInput value={amount} onChange={setAmount} max={balanceShielded} testid="send-amount" />
+          <AmountInput value={amount} onChange={setAmount} max={fromStroops(balanceShielded)} testid="send-amount" />
         </div>
         <button data-testid="send-submit" onClick={submit} disabled={busy} className="btn-primary w-full py-3">
           {busy ? <><Spinner /> Proving…</> : "Send privately"}

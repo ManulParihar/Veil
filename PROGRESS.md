@@ -105,7 +105,7 @@ contract's XLM custody balance reconciling.
 - **Deliverable/verify:** veil-crypto/SDK tests + `app` `crypto.test.ts` green with
   the new hash; a contract test asserts SDK-hash == contract-hash for a sample.
 
-### P2-C · Wallet integration (app: chain.ts, witness.ts, store, UI)
+### P2-C · Wallet integration ✅ DONE
 - Deposit: publicAmount=stroots(amount); submitTransact must carry the XLM-transfer
   sub-invocation auth (stellar-sdk `prepareTransaction` collects it; fee-payer signs).
 - New Withdraw page: amount + destination G-address → `buildWithdraw` (publicAmount=r-amount),

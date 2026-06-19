@@ -6,6 +6,7 @@ import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Deposit from "./pages/Deposit";
 import Send from "./pages/Send";
+import Withdraw from "./pages/Withdraw";
 import Receive from "./pages/Receive";
 import Activity from "./pages/Activity";
 
@@ -27,6 +28,7 @@ export default function App() {
         />
         <Route path="/deposit" element={ready ? <Layout><Deposit /></Layout> : <Navigate to="/welcome" replace />} />
         <Route path="/send" element={ready ? <Layout><Send /></Layout> : <Navigate to="/welcome" replace />} />
+        <Route path="/withdraw" element={ready ? <Layout><Withdraw /></Layout> : <Navigate to="/welcome" replace />} />
         <Route path="/receive" element={ready ? <Layout><Receive /></Layout> : <Navigate to="/welcome" replace />} />
         <Route path="/activity" element={ready ? <Layout><Activity /></Layout> : <Navigate to="/welcome" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

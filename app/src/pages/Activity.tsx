@@ -1,6 +1,6 @@
 import { useWallet } from "../store/wallet";
 import { StatusChip, truncate, EmptyState } from "../components/ui";
-import { EXPLORER_TX } from "../lib/types";
+import { EXPLORER_TX, fromStroops } from "../lib/types";
 
 export default function Activity() {
   const { txs } = useWallet();
@@ -22,7 +22,7 @@ export default function Activity() {
                 {t.error && <div className="text-xs text-veil-danger mt-1 max-w-md break-words">{t.error}</div>}
               </div>
               <div className="text-right">
-                <div className="tabular-nums font-medium">{t.amount.toString()} VEIL</div>
+                <div className="tabular-nums font-medium">{fromStroops(t.amount)} XLM</div>
                 {t.hash && (
                   <a href={EXPLORER_TX + t.hash} target="_blank" rel="noreferrer" className="text-xs text-veil-accent hover:underline">
                     {truncate(t.hash, 6, 4)} ↗

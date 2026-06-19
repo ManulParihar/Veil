@@ -63,23 +63,28 @@ export function AddressBadge({ value, label, testid }: { value: string; label?: 
   );
 }
 
-export function AmountInput({ value, onChange, max, testid }: { value: string; onChange: (v: string) => void; max?: bigint; testid?: string }) {
+export function AmountInput({ value, onChange, max, testid }: { value: string; onChange: (v: string) => void; max?: string; testid?: string }) {
+  const sanitize = (v: string) => {
+    const cleaned = v.replace(/[^0-9.]/g, "");
+    const i = cleaned.indexOf(".");
+    return i === -1 ? cleaned : cleaned.slice(0, i + 1) + cleaned.slice(i + 1).replace(/\./g, "");
+  };
   return (
     <div>
       <div className="relative">
         <input
           data-testid={testid}
-          inputMode="numeric"
+          inputMode="decimal"
           className="input pr-20 text-lg"
-          placeholder="0"
+          placeholder="0.0"
           value={value}
-          onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ""))}
+          onChange={(e) => onChange(sanitize(e.target.value))}
         />
-        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-veil-muted font-medium">VEIL</span>
+        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-veil-muted font-medium">XLM</span>
       </div>
       {max !== undefined && (
-        <button onClick={() => onChange(max.toString())} className="mt-1.5 text-xs text-veil-primary hover:underline">
-          Max: {max.toString()} VEIL
+        <button onClick={() => onChange(max)} className="mt-1.5 text-xs text-veil-primary hover:underline">
+          Max: {max} XLM
         </button>
       )}
     </div>

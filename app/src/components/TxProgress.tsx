@@ -1,4 +1,4 @@
-import { TxRecord, EXPLORER_TX } from "../lib/types";
+import { TxRecord, EXPLORER_TX, fromStroops } from "../lib/types";
 import { Spinner, truncate } from "./ui";
 
 const STEPS: { key: TxRecord["status"]; label: string }[] = [
@@ -16,7 +16,7 @@ export default function TxProgress({ tx }: { tx: TxRecord }) {
   return (
     <div className="card p-6 animate-fade-in" data-testid="tx-progress">
       <div className="flex items-center justify-between mb-5">
-        <div className="font-medium capitalize">{tx.kind} · {tx.amount.toString()} VEIL</div>
+        <div className="font-medium capitalize">{tx.kind} · {fromStroops(tx.amount)} XLM</div>
         <div data-testid="tx-status" className="text-sm">
           {tx.status === "error" ? <span className="text-veil-danger">failed</span>
             : tx.status === "success" ? <span className="text-veil-success">confirmed</span>

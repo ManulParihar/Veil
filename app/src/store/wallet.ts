@@ -83,6 +83,7 @@ export const useWallet = create<Internal>()(
               ciphertext1: bundle.extData.ciphertexts[1],
               viewTag0: bundle.extData.viewTags[0],
               viewTag1: bundle.extData.viewTags[1],
+              settlementAddress: bundle.extData.settlementAddress,
             }
           );
           onSuccess(res);
@@ -224,9 +225,11 @@ export const useWallet = create<Internal>()(
           set({ busy: true });
           await get().syncChain();
           const keys = ensureKeys(seedHex);
+          // the depositor (whose XLM is pulled) is the fee-payer account
+          const depositor = get().feeAccount!.publicKey;
           const bundle = buildDeposit({
             root: T().root(), sk: keys.spendKey, selfPub: keys.publicKey,
-            selfEncPub: keys.encPublic, amount,
+            selfEncPub: keys.encPublic, amount, settlementAddress: depositor,
           });
           return runFlow("deposit", amount, bundle, (res) => {
             // output 0 = the funded note at leafIndices[0]
@@ -255,6 +258,8 @@ export const useWallet = create<Internal>()(
             tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
             inputNote: input.note, inputLeafIndex: idx,
             amount, recipientPub: BigInt(toPubkey), recipientEncPub: fromHex(toEncPub),
+            // transfer: publicAmount==0, settlement unused on-chain; bind the fee account
+            settlementAddress: get().feeAccount!.publicKey,
           });
           const change = input.note.amount - amount;
           return runFlow("transfer", amount, bundle, (res) => {
@@ -271,7 +276,7 @@ export const useWallet = create<Internal>()(
           });
         },
 
-        withdraw: async (amount: bigint, _toStellar: string) => {
+        withdraw: async (amount: bigint, toStellar: string) => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
@@ -284,6 +289,7 @@ export const useWallet = create<Internal>()(
           const bundle = buildWithdraw({
             tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
             inputNote: input.note, inputLeafIndex: idx, amount,
+            settlementAddress: toStellar, // XLM is released here
           });
           const change = input.note.amount - amount;
           return runFlow("withdraw", amount, bundle, (res) => {

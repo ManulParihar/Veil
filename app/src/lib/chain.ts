@@ -30,6 +30,7 @@ export interface ExtDataWire {
   ciphertext1: Uint8Array;
   viewTag0: number;
   viewTag1: number;
+  settlementAddress: string; // Stellar G-address strkey
 }
 
 function proofScVal(p: ProofBytes): xdr.ScVal {
@@ -56,6 +57,7 @@ function extScVal(e: ExtDataWire): xdr.ScVal {
     ciphertext1: bytesV(e.ciphertext1),
     view_tag0: nativeToScVal(e.viewTag0, { type: "u32" }),
     view_tag1: nativeToScVal(e.viewTag1, { type: "u32" }),
+    settlement_address: Address.fromString(e.settlementAddress).toScVal(),
   });
 }
 
