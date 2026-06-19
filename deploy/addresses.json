@@ -6,8 +6,11 @@
     "deployer": "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
     "deploy_tx": "3f922b4174edae73e2be6c0603027ca76cb73867335f4bbe9e8c24663466ac4b",
     "init_tx": "17ed00ca48f939354b5b97d6f9f0c5541b14a3fcf7a9a0cc627131a562ba1a08",
+    "first_transact_tx": "84f7ee36287a892d4feeef19d1236d6408517b3312939831a53b6fb97f1a1fc1",
     "config": { "levels": 20, "root_history_size": 64 },
     "genesis_root": "2d3c07bea6883428edd2d80d07cec4b911309fed96743822d6aadea06313a951",
+    "root_after_first_transact": "2df43aa27f62b082953bcd544c5f287c492ccd0ec3462264981fe77e6d9f3b3e",
+    "note": "first_transact_tx is a REAL private transfer: a genuine Groth16 proof verified on-chain by native BN254 host functions, 2 commitments inserted, 2 nullifiers spent, root advanced. leaf_index 0->2.",
     "wasm_bytes": 63754,
     "explorer": "https://stellar.expert/explorer/testnet/contract/CD6WNAXYDSDNTKE5MX6FENGR6VO6GZY55Q2MNMA664D2NXKCF6HMR5X4"
   }

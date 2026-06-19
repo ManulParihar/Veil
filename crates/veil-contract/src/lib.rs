@@ -202,3 +202,7 @@ fn settle_public_amount(
 mod sample_proof;
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod transact_e2e_test;
+#[cfg(all(test, not(feature = "mock-verifier")))]
+mod transact_fixture;

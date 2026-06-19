@@ -19,8 +19,8 @@ for the full architecture, INTERFACES.md for the frozen cross-plane contracts).
 | 6 | veil-sdk (PLANE 4a) | ✅ | keys/note/encrypt/scan/merkle_tree/tx/prove + Wallet facade. 28 tests pass (1 `#[ignore]` = real snarkjs proof, needs circuit artifacts); clippy clean. X25519 enc key via HKDF-SHA256(seed,"veil-enc"); ChaCha20Poly1305 AEAD; view_tag=sha256(shared)[0]; on-wire ct blob = ephemeral_pub(32)\|\|aead_ct. extDataHash per INTERFACES §4. Witness JSON field names match transaction.circom. |
 | 7 | indexer (PLANE 4b) | ✅ | `indexer/`. SQLite (rusqlite bundled) store w/ idempotent upserts; ingest loop over `EventSource` trait (MockSource + StellarRpcSource) w/ checkpoint/resume + finality lag (default 5); axum read API (/notes,/nullifiers,/tree/root,/health). 19/19 tests green, clippy clean. Parses INTERFACES §5 events; Transact→latest root for /tree/root. |
 | 8 | Integration e2e | ✅ | Real `vk.rs` + `sample_proof.rs` generated from snarkjs (G2 c1‖c0 swap). **Real circuit proof verifies through Soroban's real BN254 host pairing**; tampered signal→ProofInvalid. ZK proven load-bearing end-to-end natively. Also confirmed via arkworks. |
-| 9 | Testnet validation | ⏳ | friendbot-funded deploy + simulateTransaction budget check (if stellar CLI installs & network reachable). |
-| 10 | Review + README + commit | ⏳ | code-review, honest README, final commit. |
+| 9 | Testnet validation | ✅ | **REAL on-chain private transfer succeeded** — contract `CD6WNAX…`, transact tx `84f7ee36…`: genuine Groth16 proof verified on-chain by native BN254 host fns, 2 commitments inserted, 2 nullifiers spent, root advanced to `2df43aa2…`, leaf_index 0→2. Native budget: 27.96M instr (<100M). |
+| 10 | Review + README + commit | ✅ | High-effort review: no correctness bugs; 2 findings (extDataHash agreement + tree-mirror usage) closed by the on-chain transact. Honest README written. |
 
 ## Key locked facts (do not re-derive)
 - Poseidon = circomlib original, BN254. `new_circom(n)` ↔ circom `Poseidon(n)`.

@@ -22,6 +22,7 @@ fn pow5(x: Fr) -> Fr {
     x4 * x
 }
 
+#[allow(clippy::needless_range_loop)] // indices index ark[r*t+i] / mds[i][j]
 fn permute(p: &PoseidonParams, state: &mut [Fr; 4]) {
     let t = p.t;
     let half_full = p.full_rounds / 2;
