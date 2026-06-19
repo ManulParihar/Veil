@@ -4,14 +4,23 @@ import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 // snarkjs, circomlibjs and @stellar/stellar-sdk expect Node globals
 // (Buffer, process) in the browser. Polyfill them.
+// The browser build needs node polyfills (snarkjs/circomlibjs/stellar-sdk); the
+// vitest (node) run must NOT use them — node has the real modules.
+const isTest = !!process.env.VITEST;
+
 export default defineConfig({
   plugins: [
     react(),
-    nodePolyfills({
-      globals: { Buffer: true, global: true, process: true },
-      protocolImports: true,
-    }),
+    ...(isTest
+      ? []
+      : [
+          nodePolyfills({
+            globals: { Buffer: true, global: true, process: true },
+            protocolImports: true,
+          }),
+        ]),
   ],
+  test: { environment: "node", testTimeout: 60000 },
   server: { port: 5173, host: true },
   preview: { port: 4173, host: true },
   build: { target: "es2022" },
