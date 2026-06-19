@@ -199,4 +199,6 @@ fn settle_public_amount(
 }
 
 #[cfg(test)]
+mod sample_proof;
+#[cfg(test)]
 mod test;

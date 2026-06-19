@@ -134,3 +134,75 @@ mod mock {
         }
     }
 }
+
+/// THE end-to-end ZK test: a REAL Groth16 proof from the circuit, verified
+/// through the REAL BN254 pairing via Soroban's host functions against the REAL
+/// baked-in VK. This runs without `mock-verifier`, so it exercises the genuine
+/// load-bearing path. A passing assertion here proves: (a) the snarkjs↔host
+/// serialization (incl. the G2 c1‖c0 swap) is correct, and (b) the ZK is
+/// load-bearing at the contract boundary — flip one public signal and it fails.
+#[cfg(test)]
+mod real_proof_test {
+    use super::*;
+    use crate::sample_proof::{PROOF_A, PROOF_B, PROOF_C, PUBLIC_SIGNALS};
+    use crate::vk::VK;
+    use soroban_sdk::{BytesN, Env};
+
+    fn fixture(env: &Env) -> (Proof, PublicSignals) {
+        let proof = Proof {
+            a: BytesN::from_array(env, &PROOF_A),
+            b: BytesN::from_array(env, &PROOF_B),
+            c: BytesN::from_array(env, &PROOF_C),
+        };
+        let s = PublicSignals {
+            root: BytesN::from_array(env, &PUBLIC_SIGNALS[0]),
+            public_amount: BytesN::from_array(env, &PUBLIC_SIGNALS[1]),
+            ext_data_hash: BytesN::from_array(env, &PUBLIC_SIGNALS[2]),
+            nullifier0: BytesN::from_array(env, &PUBLIC_SIGNALS[3]),
+            nullifier1: BytesN::from_array(env, &PUBLIC_SIGNALS[4]),
+            commitment0: BytesN::from_array(env, &PUBLIC_SIGNALS[5]),
+            commitment1: BytesN::from_array(env, &PUBLIC_SIGNALS[6]),
+        };
+        (proof, s)
+    }
+
+    #[test]
+    fn real_proof_verifies() {
+        let env = Env::default();
+        let (proof, signals) = fixture(&env);
+        assert_eq!(
+            verify_real(&env, &VK, &proof, &signals),
+            Ok(()),
+            "a genuine circuit proof must verify through the real BN254 host path"
+        );
+    }
+
+    #[test]
+    fn tampered_public_signal_rejected() {
+        let env = Env::default();
+        let (proof, mut signals) = fixture(&env);
+        // Flip a nullifier — the proof no longer attests to these public inputs.
+        signals.nullifier0 = BytesN::from_array(&env, &[0x12u8; 32]);
+        assert_eq!(
+            verify_real(&env, &VK, &proof, &signals),
+            Err(Error::ProofInvalid),
+            "tampering a public signal MUST fail verification (ZK is load-bearing)"
+        );
+    }
+
+    /// A corrupted proof whose `A` is no longer a valid curve point is rejected
+    /// by a host trap (the `pairing_check` host function validates points are
+    /// on-curve / in-subgroup and errors otherwise). In production this rolls
+    /// the whole `transact` back — still a rejection, via trap rather than a
+    /// clean `ProofInvalid`. We assert the trap to document that path.
+    #[test]
+    #[should_panic]
+    fn corrupted_proof_point_traps() {
+        let env = Env::default();
+        let (mut proof, signals) = fixture(&env);
+        let mut a = PROOF_A;
+        a[0] ^= 0x01; // almost certainly off-curve now
+        proof.a = BytesN::from_array(&env, &a);
+        let _ = verify_real(&env, &VK, &proof, &signals);
+    }
+}
