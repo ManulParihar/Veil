@@ -42,6 +42,8 @@ export interface StoredNote {
   note: Note;
   leafIndex: number | null;
   spent: boolean;
+  /** Present when a decrypted/persisted note is visible but not spendable. */
+  invalidReason?: string;
   /** when we first saw/created it (ms) */
   createdAt: number;
 }

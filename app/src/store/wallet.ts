@@ -4,7 +4,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import {
-  initCrypto, deriveKeys, fieldToBytes, fromHex, toHex, commitment, nullifier, type Keys, type Note,
+  initCrypto, deriveKeys, fieldToBytes, fromHex, toHex, nullifier, type Keys, type Note,
 } from "../lib/crypto";
 import { ClientMerkleTree } from "../lib/merkleTree";
 import { buildDeposit, buildTransfer, buildWithdraw, type WitnessBundle } from "../lib/witness";
@@ -17,6 +17,8 @@ import * as walletkit from "../lib/walletkit";
 import { scanEvents } from "../lib/scan";
 import { faucetFor, faucetSecret } from "../lib/faucet";
 import { currencyById, toBaseUnits } from "../lib/currencies";
+import { noteKey, selectSpendInputs, spendSelectionError } from "../lib/spendSelection";
+import { validateStoredNotes } from "../lib/noteValidation";
 import {
   type WalletState, type StoredNote, type TxRecord, type FeeAccount, type TransactResult,
   CONTRACT_ID,
@@ -43,7 +45,7 @@ const storage = createJSONStorage(() => localStorage, {
 });
 
 function totalUnspent(notes: StoredNote[]): bigint {
-  return notes.filter((n) => !n.spent).reduce((s, n) => s + n.note.amount, 0n);
+  return notes.filter((n) => !n.spent && !n.invalidReason).reduce((s, n) => s + n.note.amount, 0n);
 }
 
 /** Per-currency unspent totals, keyed by currency_id. */
@@ -51,10 +53,25 @@ function balancesByCurrency(notes: StoredNote[]): Record<number, bigint> {
   const out: Record<number, bigint> = {};
   for (const n of notes) {
     if (n.spent) continue;
+    if (n.invalidReason) continue;
     const c = n.note.currencyId;
     out[c] = (out[c] ?? 0n) + n.note.amount;
   }
   return out;
+}
+
+function localRootHex(): string {
+  return toHex(fieldToBytes(T().root()));
+}
+
+function treeOutOfSyncError(): Error {
+  return new Error(
+    "local Merkle tree is incomplete or out of sync with the contract; scan/sync again before spending"
+  );
+}
+
+function assertSyncedTreeRoot(currentRoot: string | null): void {
+  if (currentRoot && currentRoot !== localRootHex()) throw treeOutOfSyncError();
 }
 
 interface Internal extends WalletState {
@@ -281,14 +298,21 @@ export const useWallet = create<Internal>()(
         },
 
         syncChain: async () => {
-          const fa = get().feeAccount;
+          const { feeAccount: fa, seedHex } = get();
           set({ syncing: true });
           try {
             const events = await chain.getNewCommitments();
             TREE = new ClientMerkleTree();
             T().insertMany(events.map((e) => chain.toHex(e.commitment)).map((h) => BigInt("0x" + h)));
-            const root = fa ? await chain.getCurrentRoot(fa.publicKey).catch(() => toHex(fieldToBytes(T().root()))) : toHex(fieldToBytes(T().root()));
-            set({ currentRoot: root, nextLeafIndex: T().length });
+            const root = fa ? await chain.getCurrentRoot(fa.publicKey).catch(() => localRootHex()) : localRootHex();
+            const notes = seedHex ? validateStoredNotes(get().notes, events, ensureKeys(seedHex).publicKey) : get().notes;
+            set({
+              currentRoot: root,
+              nextLeafIndex: T().length,
+              notes,
+              balanceShielded: totalUnspent(notes),
+              balancesByCurrency: balancesByCurrency(notes),
+            });
           } finally {
             set({ syncing: false });
           }
@@ -304,20 +328,21 @@ export const useWallet = create<Internal>()(
             // rebuild tree so leaf indices align
             TREE = new ClientMerkleTree();
             T().insertMany(events.map((e) => BigInt("0x" + chain.toHex(e.commitment))));
+            const root = feeAccount ? await chain.getCurrentRoot(feeAccount.publicKey).catch(() => localRootHex()) : localRootHex();
             const found = scanEvents(keys, events);
-            const existing = new Set(get().notes.map((n) => n.leafIndex));
+            const existing = new Set(get().notes.map((n) => `${n.leafIndex}:${noteKey(n.note)}`));
             const fresh = found
-              .filter((f) => !existing.has(f.leafIndex))
+              .filter((f) => !existing.has(`${f.leafIndex}:${noteKey(f.note)}`))
               .map<StoredNote>((f) => ({ note: f.note, leafIndex: f.leafIndex, spent: false, createdAt: now() }));
 
             // Reconcile spend state on-chain: a recovered (or stale) note whose
             // nullifier is already published must be marked spent, else the
             // balance double-counts and a spend would fail with NullifierSpent.
-            let notes = [...get().notes, ...fresh];
+            let notes = validateStoredNotes([...get().notes, ...fresh], events, keys.publicKey);
             if (feeAccount) {
               notes = await Promise.all(
                 notes.map(async (n) => {
-                  if (n.spent || n.leafIndex == null) return n;
+                  if (n.spent || n.invalidReason || n.leafIndex == null) return n;
                   try {
                     const nf = nullifier(n.note, keys.spendKey, BigInt(n.leafIndex));
                     const spent = await chain.isSpent(feeAccount.publicKey, fieldToBytes(nf));
@@ -332,6 +357,7 @@ export const useWallet = create<Internal>()(
               notes,
               balanceShielded: totalUnspent(notes),
               balancesByCurrency: balancesByCurrency(notes),
+              currentRoot: root,
               nextLeafIndex: T().length,
             });
             return fresh.length;
@@ -401,26 +427,27 @@ export const useWallet = create<Internal>()(
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           await get().syncChain();
+          try {
+            assertSyncedTreeRoot(get().currentRoot);
+          } catch (e) {
+            set({ busy: false });
+            throw e;
+          }
           const keys = ensureKeys(seedHex);
-          const input = get().notes.find(
-            (n) => !n.spent && n.note.pubkey === keys.publicKey && n.note.currencyId === currencyId && n.note.amount >= amount && n.leafIndex != null
-          );
-          if (!input || input.leafIndex == null) { set({ busy: false }); throw new Error("no note covers that amount"); }
-          // authoritative leaf index from the freshly-synced tree (the stored one
-          // can be stale if other transacts landed in between).
-          const idx = T().indexOf(commitment(input.note));
-          if (idx < 0) { set({ busy: false }); throw new Error("note not found on-chain — sync/scan first"); }
+          const { selected, totalSpendable } = selectSpendInputs(get().notes, T(), keys.publicKey, currencyId, amount);
+          if (!selected) { set({ busy: false }); throw spendSelectionError(totalSpendable, amount); }
           const bundle = buildTransfer({
             tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
-            inputNote: input.note, inputLeafIndex: idx,
+            inputs: selected.inputs,
             amount, recipientPub: BigInt(toPubkey), recipientEncPub: fromHex(toEncPub),
             // transfer: publicAmount==0, settlement unused on-chain; bind the payer
             settlementAddress: get().payerPublicKey()!,
           });
-          const change = input.note.amount - amount;
+          const spentKeys = new Set(selected.notes.map((n) => noteKey(n.note)));
+          const change = selected.change;
           return runFlow("transfer", currencyId, amount, bundle, (res) => {
             set((s) => {
-              const notes = s.notes.map((n) => (n.leafIndex === input.leafIndex ? { ...n, spent: true } : n));
+              const notes = s.notes.map((n) => (spentKeys.has(noteKey(n.note)) ? { ...n, spent: true } : n));
               if (change > 0n) {
                 notes.push({
                   note: { amount: change, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[1].note.blinding },
@@ -437,22 +464,25 @@ export const useWallet = create<Internal>()(
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           await get().syncChain();
+          try {
+            assertSyncedTreeRoot(get().currentRoot);
+          } catch (e) {
+            set({ busy: false });
+            throw e;
+          }
           const keys = ensureKeys(seedHex);
-          const input = get().notes.find(
-            (n) => !n.spent && n.note.pubkey === keys.publicKey && n.note.currencyId === currencyId && n.note.amount >= amount && n.leafIndex != null
-          );
-          if (!input || input.leafIndex == null) { set({ busy: false }); throw new Error("no note covers that amount"); }
-          const idx = T().indexOf(commitment(input.note));
-          if (idx < 0) { set({ busy: false }); throw new Error("note not found on-chain — sync/scan first"); }
+          const { selected, totalSpendable } = selectSpendInputs(get().notes, T(), keys.publicKey, currencyId, amount);
+          if (!selected) { set({ busy: false }); throw spendSelectionError(totalSpendable, amount); }
           const bundle = buildWithdraw({
             tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
-            inputNote: input.note, inputLeafIndex: idx, amount,
+            inputs: selected.inputs, amount,
             settlementAddress: toStellar, // XLM is released here
           });
-          const change = input.note.amount - amount;
+          const spentKeys = new Set(selected.notes.map((n) => noteKey(n.note)));
+          const change = selected.change;
           return runFlow("withdraw", currencyId, amount, bundle, (res) => {
             set((s) => {
-              const notes = s.notes.map((n) => (n.leafIndex === input.leafIndex ? { ...n, spent: true } : n));
+              const notes = s.notes.map((n) => (spentKeys.has(noteKey(n.note)) ? { ...n, spent: true } : n));
               if (change > 0n) {
                 notes.push({
                   note: { amount: change, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding },

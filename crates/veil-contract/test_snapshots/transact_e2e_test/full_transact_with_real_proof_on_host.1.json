@@ -107,7 +107,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "28e62892beb5f0d16c53910d5b7e3005ff48f33bcebb13493106164669f270af"
+                "bytes": "229de675d6c480f1492ff37d5f5d463f77553d8dbae6a3eb8099f9b77c29d03f"
               }
             }
           },
@@ -134,7 +134,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "11f9259ca4a55e70ac7a297e7a34f7bbec6ce9906e27a55b5e6241fcbb6b1f02"
+                "bytes": "25f6437d44483bc8e5e14945716997b8d6a2d46ff695a37df4bf5b608972d00f"
               }
             }
           },
@@ -161,7 +161,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "0c356485a07627e8774e6057bd868902edac30ee1e732ccbebc58e8c13f79188"
+                "bytes": "25109f4550d846592c4747aa412fa011542770c9d53f06516ee36d44816c51f9"
               }
             }
           },
@@ -188,7 +188,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "0fcdeef157c9b8e976abd009347029f22231b88cd68d74670d370b8301ed98b5"
+                "bytes": "21152cdafcf4eb9bdb639ddae6beed0a970e2d8e2a2d1cb8baf3d5eb8e22b0b3"
               }
             }
           },
@@ -215,7 +215,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "2056f1fe22b766ac760dfb2e494c9b7af7f72f5b48a59dc1368afa6499215dcc"
+                "bytes": "11ebeabd89fc11e096d1d3dc644d6b4653befa3c164a33d3303159614057e2af"
               }
             }
           },
@@ -242,7 +242,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "24d0e8d567983a0dcbc8264ac1d2128b93217997e2a36425a5efbef115670a6b"
+                "bytes": "1289ba1d662ad62df53b2b526aa91691ea0ab7c47adedd3aed715221f7a8bf9e"
               }
             }
           },
@@ -269,7 +269,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "1f0f8aff0752a7007689a8de62cc541f01877d7be93785181afe91585a3bcb11"
+                "bytes": "0cd063deded454f196beedaf5e315fd71e15b91222570a098637155107ae1464"
               }
             }
           },
@@ -296,7 +296,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "1414cb3a51f2223785a80723ded0303ccc27d1c68ed1ba8e699eea07e6465c8a"
+                "bytes": "106b7fa3b23afa4c581024601fdb3edc58e442e864884cc749aaeaf5eb3b767f"
               }
             }
           },
@@ -323,7 +323,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "1c666b9e567912526de24b5ac1f04e8dd4db30d54a4e96a85b2ee340eb82cf3e"
+                "bytes": "135f46089f86ce70e3f1b438a998dd0f7876e5f89923c4f8336bdddf7e660a50"
               }
             }
           },
@@ -350,7 +350,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "128098c2c478c8d51dac8c8ae638aed310c2c9d3cbbba66bc4c3df77b08bfcab"
+                "bytes": "045385dd7aea9e6ce4af63533262292b4f9368eb9ffafa0bbb68dfeac179f592"
               }
             }
           },
@@ -377,7 +377,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "215c4c24f198476abf1a17fc0c4720f79b438e049d7e872ad4f4846d2feb514c"
+                "bytes": "0e8036eb0d7857b1b07ae06e4c17f5f6557cb5ee5b78bcfb3350f72397481619"
               }
             }
           },
@@ -404,7 +404,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "2391d2ef2d0d6d34ea9b32044fe79f8fc5cca22cd0b895a937891d20148bd512"
+                "bytes": "034fe2698c3a0773559f9d98c937d4f1a5d09ce608ae7afb7421a28e6a199785"
               }
             }
           },
@@ -431,7 +431,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "275b6cf40c8339e5c2de05b962739746acd3f0d0af6760114b96701a72974049"
+                "bytes": "1873a0fceca0a55cf8c1d8b7bc65f011e46ccad5930f504160a1fbce14c40701"
               }
             }
           },
@@ -458,7 +458,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "2eb4fc9266a64eda35e3795c154fa0855569db4706b998118f5bb08c5b6d99b7"
+                "bytes": "04fd29554c3e485c4396103a8068c48ef4937c2822e61285d770aa6eecff9934"
               }
             }
           },
@@ -485,7 +485,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "2c42cee171df04e0cfc7bbaf9aefecf7ca37611da1dad6996088b172e96b51d5"
+                "bytes": "1d42e4f0c5f18ce2ec24646b2e463fba71536ce39bf84fecb2ee14d7da6759c1"
               }
             }
           },
@@ -512,7 +512,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "2a9ac5404537d1ae0d1709ed49161567c3e7fa4d1fad207ce3a06f9cfa1c7e43"
+                "bytes": "00b09345cd0d93fcb6e5940cf658c11cef9e2b4afad362f99b9255b723adb146"
               }
             }
           },
@@ -539,7 +539,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "16b681af31d968f2cdd9a617c064eb055de35c7f232b0c710d1e2d193d6ffc17"
+                "bytes": "23e94111985b091145ac6b46e0cc1f5307da88a03a6b84fb9f14dec3197cfeac"
               }
             }
           },
@@ -566,7 +566,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "2b912a3590a72e6b410c7debcc56dfcb0b558db7fc798f0d98c14711882f26ca"
+                "bytes": "032c7eacb8cd2b91f8cc8608518e66d33bb07add124d7dab1eb8516853559a83"
               }
             }
           },
@@ -593,7 +593,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "273695b5f7b1d58da9be9a5edc74672cbb79c9a3160346e8a3629a924721f323"
+                "bytes": "27353ca28582ba473347b0596326cc7e3a1f65a2396be3d2a935927ea80f7ef6"
               }
             }
           },
@@ -614,7 +614,7 @@
                     "symbol": "Nullifier"
                   },
                   {
-                    "bytes": "0b95f7c4bd98a3a85c7ecf76270bc14c0f0e90a3808c9c59c2ea4c26b6c1d30e"
+                    "bytes": "0fc16c0adb6ebb860fccf1398dd7ebfc2bf0099933fa2522f7c549c93ec9678a"
                   }
                 ]
               },
@@ -639,7 +639,7 @@
                     "symbol": "Nullifier"
                   },
                   {
-                    "bytes": "0f0261da090d4cf37b48f8d6c7f2249454be96aab621c6ec5497793b2e76a449"
+                    "bytes": "1f964102231b35b41032048af45f92f27c5d130b1722888b4c1d19a8762c9e97"
                   }
                 ]
               },
@@ -697,7 +697,7 @@
               },
               "durability": "persistent",
               "val": {
-                "bytes": "2df43aa27f62b082953bcd544c5f287c492ccd0ec3462264981fe77e6d9f3b3e"
+                "bytes": "06821ef1b0f9b3cb64a8601973b3e37796ad58f1df41e06056c86af463a021ae"
               }
             }
           },
@@ -790,11 +790,26 @@
                         "vec": [
                           {
                             "symbol": "Token"
+                          },
+                          {
+                            "u32": 0
                           }
                         ]
                       },
                       "val": {
                         "address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "TokenCount"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     },
                     {

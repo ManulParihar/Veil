@@ -62,8 +62,17 @@ export default function Receive() {
                   <span className="tabular-nums font-medium">{formatAmount(n.note.amount, n.note.currencyId)}</span>
                   {n.leafIndex != null && <span className="text-xs text-veil-muted">leaf #{n.leafIndex}</span>}
                 </div>
-                <span className={`text-xs rounded-full px-2.5 py-0.5 ${n.spent ? "bg-veil-border text-veil-muted" : "bg-veil-success/15 text-veil-success"}`}>
-                  {n.spent ? "spent" : "unspent"}
+                <span
+                  title={n.invalidReason}
+                  className={`text-xs rounded-full px-2.5 py-0.5 ${
+                    n.invalidReason
+                      ? "bg-veil-danger/15 text-veil-danger"
+                      : n.spent
+                        ? "bg-veil-border text-veil-muted"
+                        : "bg-veil-success/15 text-veil-success"
+                  }`}
+                >
+                  {n.invalidReason ? "invalid" : n.spent ? "spent" : "unspent"}
                 </span>
               </div>
             ))}

@@ -107,6 +107,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "currency_id"
+                      },
+                      "val": {
+                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "ext_data_hash"
                       },
                       "val": {
@@ -1079,11 +1087,26 @@
                         "vec": [
                           {
                             "symbol": "Token"
+                          },
+                          {
+                            "u32": 0
                           }
                         ]
                       },
                       "val": {
                         "address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "TokenCount"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     },
                     {
