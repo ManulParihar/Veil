@@ -173,7 +173,7 @@ publicAmount + sum(inputs) = sum(outputs)
 
 How it is used now:
 
-Phase 1 requires `publicAmount = 0`.
+Normal private transfers use `publicAmount = 0`. The current contract also accepts non-zero `publicAmount` as testnet-only mint/burn accounting, but it does not yet move a real Stellar asset.
 
 Why it exists already:
 

@@ -54,7 +54,7 @@ Its logic:
 7. Verify Groth16 proof.
 8. Mark nullifiers spent.
 9. Insert two output commitments.
-10. Reject non-zero publicAmount in Phase 1.
+10. Accept `publicAmount` as circuit-balanced accounting, but do not settle a real token yet.
 11. Emit events.
 ```
 
@@ -132,15 +132,16 @@ Why the indexer exists:
 
 RPC may not retain old events forever.
 
-## Phase 1 Public Amount Rule
+## Public Amount Rule
 
-The circuit supports `publicAmount`, but the contract currently rejects non-zero values.
+The circuit supports `publicAmount`, and the current contract accepts non-zero values as testnet accounting.
 
 Meaning:
 
 - private transfer: allowed with `publicAmount = 0`,
-- deposit: not wired yet,
-- withdrawal: not wired yet.
+- deposit-style mint: accepted as unbacked shielded test credits,
+- withdrawal-style burn: accepted as accounting only,
+- real Stellar token transfer: not wired yet.
 
 Why include it now:
 

@@ -56,8 +56,8 @@ This is research-grade, not production-ready.
 Important simplifications:
 
 - The trusted setup is single-contributor, not a real ceremony.
-- Phase 1 only supports private transfers with `publicAmount = 0`.
-- Deposit and withdrawal token settlement are not wired yet.
+- Private transfer uses `publicAmount = 0`.
+- Non-zero `publicAmount` is accepted as unbacked testnet mint/burn accounting, but real deposit/withdraw token settlement is not wired yet.
 - The SDK wallet currently builds transfers using one real input plus one dummy input, even though the circuit supports two real inputs.
 - Relayers are not implemented, so the fee-payer can still reveal who submitted the transaction.
 - Viewing-key delegation exists in the key hierarchy but is not fully used.

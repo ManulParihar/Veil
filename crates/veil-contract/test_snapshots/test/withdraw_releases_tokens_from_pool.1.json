@@ -56,22 +56,190 @@
         {
           "function": {
             "contract_fn": {
-              "contract_address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF",
-              "function_name": "transfer",
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "transact",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "a"
+                      },
+                      "val": {
+                        "bytes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "b"
+                      },
+                      "val": {
+                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "c"
+                      },
+                      "val": {
+                        "bytes": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    }
+                  ]
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "commitment0"
+                      },
+                      "val": {
+                        "bytes": "00000000000000000000000000000000000000000000000000000000000003eb"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "commitment1"
+                      },
+                      "val": {
+                        "bytes": "00000000000000000000000000000000000000000000000000000000000007d4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "ext_data_hash"
+                      },
+                      "val": {
+                        "bytes": "11f51a1e34216ea86dca6fe7c5ba7849324602d9f2778a536b5c5776b3d10a30"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "nullifier0"
+                      },
+                      "val": {
+                        "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "nullifier1"
+                      },
+                      "val": {
+                        "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "public_amount"
+                      },
+                      "val": {
+                        "bytes": "0000000000000000000000000000000000000000000000000000000000000064"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "root"
+                      },
+                      "val": {
+                        "bytes": "2d3c07bea6883428edd2d80d07cec4b911309fed96743822d6aadea06313a951"
+                      }
+                    }
+                  ]
                 },
                 {
-                  "i128": "100"
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "ciphertext0"
+                      },
+                      "val": {
+                        "bytes": ""
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "ciphertext1"
+                      },
+                      "val": {
+                        "bytes": ""
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "fee"
+                      },
+                      "val": {
+                        "u128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "recipient"
+                      },
+                      "val": {
+                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "relayer"
+                      },
+                      "val": {
+                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "settlement_address"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "view_tag0"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "view_tag1"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    }
+                  ]
                 }
               ]
             }
           },
-          "sub_invocations": []
+          "sub_invocations": [
+            {
+              "function": {
+                "contract_fn": {
+                  "contract_address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF",
+                  "function_name": "transfer",
+                  "args": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                    },
+                    {
+                      "i128": "100"
+                    }
+                  ]
+                }
+              },
+              "sub_invocations": []
+            }
+          ]
         }
       ]
     ],

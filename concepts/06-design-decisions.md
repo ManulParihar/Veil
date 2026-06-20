@@ -152,7 +152,7 @@ Tradeoff:
 
 The indexer is extra infrastructure. Users may need a trusted or self-hosted indexer unless a decentralized indexing solution is used.
 
-## Reject Non-Zero `publicAmount` In Phase 1
+## Include `publicAmount` Before Real Settlement
 
 Why:
 
@@ -160,7 +160,7 @@ The circuit is already designed for deposits and withdrawals, but token custody 
 
 Design:
 
-The contract rejects non-zero `publicAmount` with `InsufficientFunds`.
+The current contract accepts non-zero `publicAmount` as circuit-balanced testnet accounting. It does not yet transfer a real Stellar asset in or out.
 
 Benefit:
 

@@ -97,7 +97,7 @@ Only after proof verification does it:
 
 - mark nullifiers spent,
 - insert two output commitments,
-- reject non-zero `publicAmount` in Phase 1,
+- accept `publicAmount` as circuit-balanced testnet accounting, but without real token settlement yet,
 - emit events.
 
 Why this design matters:
