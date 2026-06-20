@@ -8,7 +8,7 @@ include "keypair.circom";
 
 // The Veil 2-in / 2-out joinsplit.
 //
-// Public signals (FROZEN order — must equal INTERFACES.md §3 and the contract's
+// Public signals (FROZEN order - must equal INTERFACES.md §3 and the contract's
 // PublicSignals layout):
 //   [0] root
 //   [1] publicAmount
@@ -17,12 +17,17 @@ include "keypair.circom";
 //   [4] inputNullifier[1]
 //   [5] outputCommitment[0]
 //   [6] outputCommitment[1]
+//   [7] currencyId          // multi-currency: the asset all notes in this tx use
 //
 // All note math mirrors crates/veil-crypto (the single source of Poseidon truth):
 //   pk         = Poseidon(sk)
-//   commitment = Poseidon(amount, pk, blinding)
+//   commitment = Poseidon(amount, currencyId, pk, blinding)
 //   signature  = Poseidon(sk, commitment, pathIndex)
 //   nullifier  = Poseidon(commitment, pathIndex, signature)
+//
+// currencyId is fed into every input and output commitment, so all four notes
+// in a transaction are forced to the same asset: an input leaf only matches the
+// tree if its baked-in currency equals the public currencyId.
 template Transaction(levels) {
     // ---- public inputs (declared first so they take public-signal slots 0..) ----
     signal input root;
@@ -30,6 +35,7 @@ template Transaction(levels) {
     signal input extDataHash;
     signal input inputNullifier[2];
     signal input outputCommitment[2];
+    signal input currencyId;
 
     // ---- private inputs: spent notes ----
     signal input inAmount[2];
@@ -61,11 +67,12 @@ template Transaction(levels) {
         inKeypair[i] = Keypair();
         inKeypair[i].privateKey <== inPrivateKey[i];
 
-        // commitment well-formedness
-        inCommitment[i] = Poseidon(3);
+        // commitment well-formedness (binds the asset via currencyId)
+        inCommitment[i] = Poseidon(4);
         inCommitment[i].inputs[0] <== inAmount[i];
-        inCommitment[i].inputs[1] <== inKeypair[i].publicKey;
-        inCommitment[i].inputs[2] <== inBlinding[i];
+        inCommitment[i].inputs[1] <== currencyId;
+        inCommitment[i].inputs[2] <== inKeypair[i].publicKey;
+        inCommitment[i].inputs[3] <== inBlinding[i];
 
         // signature + nullifier (binds path so position is unique)
         inSignature[i] = Signature();
@@ -113,10 +120,11 @@ template Transaction(levels) {
     var sumOut = 0;
 
     for (var i = 0; i < 2; i++) {
-        outCommitment[i] = Poseidon(3);
+        outCommitment[i] = Poseidon(4);
         outCommitment[i].inputs[0] <== outAmount[i];
-        outCommitment[i].inputs[1] <== outPubkey[i];
-        outCommitment[i].inputs[2] <== outBlinding[i];
+        outCommitment[i].inputs[1] <== currencyId;
+        outCommitment[i].inputs[2] <== outPubkey[i];
+        outCommitment[i].inputs[3] <== outBlinding[i];
         outCommitment[i].out === outputCommitment[i];
 
         outRange[i] = Num2Bits(MAX_BITS);
@@ -139,5 +147,6 @@ component main {public [
     publicAmount,
     extDataHash,
     inputNullifier,
-    outputCommitment
+    outputCommitment,
+    currencyId
 ]} = Transaction(20);

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useWallet } from "../store/wallet";
 import { AmountInput, Spinner, useToast } from "../components/ui";
+import CurrencySelect from "../components/CurrencySelect";
 import TxProgress from "../components/TxProgress";
-import { toStroops, fromStroops } from "../lib/types";
+import { currencyById, toBaseUnits, fromBaseUnits, DEFAULT_CURRENCY_ID } from "../lib/currencies";
 
 // A Veil address is encoded as `pubkey.encPubHex` for easy paste/QR.
 function parseAddress(s: string): { pubkey: string; encPub: string } | null {
@@ -12,25 +13,28 @@ function parseAddress(s: string): { pubkey: string; encPub: string } | null {
 }
 
 export default function Send() {
-  const { send, txs, balanceShielded, address } = useWallet();
+  const { send, txs, balancesByCurrency, address } = useWallet();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
+  const [currencyId, setCurrencyId] = useState(DEFAULT_CURRENCY_ID);
   const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const currency = currencyById(currencyId);
+  const balance = balancesByCurrency[currencyId] ?? 0n;
   const tx = started ? txs.find((t) => t.kind === "transfer") : undefined;
 
   const submit = async () => {
     const addr = parseAddress(to);
     if (!addr) { toast.push("Invalid Veil address (expect pubkey.encpub)", "err"); return; }
-    const a = toStroops(amount);
+    const a = toBaseUnits(amount, currency.decimals);
     if (a <= 0n) { toast.push("Enter an amount", "err"); return; }
-    if (a > balanceShielded) { toast.push("Amount exceeds balance", "err"); return; }
+    if (a > balance) { toast.push("Amount exceeds balance", "err"); return; }
     setBusy(true);
     setStarted(true);
     try {
-      await send(addr.pubkey, addr.encPub, a);
-      toast.push(`Sent ${amount} XLM privately`, "ok");
+      await send(currencyId, addr.pubkey, addr.encPub, a);
+      toast.push(`Sent ${amount} ${currency.symbol} privately`, "ok");
       setTo(""); setAmount("");
     } catch (e: any) {
       toast.push(e.message ?? "send failed", "err");
@@ -46,6 +50,10 @@ export default function Send() {
 
       <div className="card p-6 space-y-4">
         <div>
+          <div className="label">Asset</div>
+          <CurrencySelect value={currencyId} onChange={setCurrencyId} testid="send-currency" />
+        </div>
+        <div>
           <div className="label">Recipient Veil address</div>
           <input data-testid="send-to" className="input mono text-sm" placeholder="pubkey.encpub" value={to} onChange={(e) => setTo(e.target.value)} />
           {address && (
@@ -56,7 +64,7 @@ export default function Send() {
         </div>
         <div>
           <div className="label">Amount</div>
-          <AmountInput value={amount} onChange={setAmount} max={fromStroops(balanceShielded)} testid="send-amount" />
+          <AmountInput value={amount} onChange={setAmount} max={fromBaseUnits(balance, currency.decimals)} testid="send-amount" />
         </div>
         <button data-testid="send-submit" onClick={submit} disabled={busy} className="btn-primary w-full py-3">
           {busy ? <><Spinner /> Proving…</> : "Send privately"}

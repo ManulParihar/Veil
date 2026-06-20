@@ -137,3 +137,47 @@ contract's XLM custody balance reconciling.
   `d4521703…`)→**withdraw 0.4 XLM** to a Stellar address (`e8b48130…`); shielded balance 2→1.6.
 - On-chain pool custody reconciles: deposits − withdrawals (verified via SAC balance).
 - Auth: contract `settlement_address.require_auth()` (root-tied) + client `authorizeEntry` signing.
+
+---
+
+# /goal - Phase 3: multi-currency in a single contract (registry-driven)
+
+GOAL: one shielded pool that holds many assets. Each note carries a `currency_id`;
+the contract keeps a registry `currency_id -> SAC Address` and an admin can add new
+tokens by writing to that registry. Hard requirement: adding a token is a pure
+state write: no wasm upgrade, no circuit change, no trusted-setup regeneration
+(the circuit treats `currency_id` as an opaque field element). One currency per
+transaction; cross-currency swaps are out of scope.
+
+Design (decided):
+- commitment = Poseidon(amount, currency_id, pk, blinding), a 4-input Poseidon (add PARAMS_T5).
+- currency_id = u32 registry index. Contract state: `Token(u32) -> Address`, `TokenCount -> u32`.
+- New public signal `currencyId` at index [7]; public-signal count 7 -> 8.
+- Note plaintext gains currency_id (4 bytes): amount(8)||currencyId(4)||pubkey(32)||blinding(32) = 76.
+- Only Admin may `register_token` (`admin.require_auth()` else `Unauthorized`).
+- `transact` rejects `currency_id >= token_count` (`UnknownCurrency`) on every call.
+- Settlement looks up `Token(currency_id)`, never a fixed global token.
+- Breaking change: new commitment formula + signal count + storage layout -> fresh deploy.
+
+## Status legend: ✅ done & verified · 🟡 in progress · ⏳ queued
+
+| # | Plane / task | Status | Notes |
+|---|---|---|---|
+| M0 | Seed this tracker section | ✅ | done |
+| M1 | **GATE**: crypto Poseidon t=5 + PARAMS_T5 + hash4 + width-4 cross-impl vector | ✅ | poseidon.rs state [Fr;5]; PARAMS_T5 from light-poseidon 0.4 via committed gen example; Poseidon(1,2,3,4)=18821383…; 6/6 tests, wasm32 no_std builds, clippy clean |
+| M2 | crypto: currency_id in Note, commitment -> hash4, re-pin vectors | ✅ | commitment=Poseidon(amount,currency_id,pk,blinding); pinned (cur=1): cm=1368167…, nf=5670915…; INTERFACES §0 updated |
+| M3 | app crypto.ts mirror (hash4 + 76-byte plaintext), assert same vector | ✅ | crypto.test.ts 7/7; Poseidon(1,2,3,4) + note vectors match Rust; plaintext 76B round-trips with currencyId. witness.ts + rest of app land in M8 |
+| M4 | circuit: Poseidon(4) commitments + currencyId [7], fixture cross-check | ✅ | currencyId is public signal [7]; 4 commitments use Poseidon(4); 4/4 circom tests; note pipeline matches pinned width-4 vectors. zkey/vkey regen in M5 |
+| M5 | regenerate zkey/vkey -> vk.rs (NUM_PUBLIC=8, 9 IC points) | ✅ | vk.rs NUM_PUBLIC=8 IC=9; sample_proof.rs + transact_fixture.rs now 8 signals (currencyId at [7]); both proofs verify via snarkjs; generators use pos4 + currencyId |
+| M6 | contract: registry, admin-only register_token, currency validation + scoped settlement, errors, tests | ✅ | Token(u32)+TokenCount registry; register_token admin-gated (Unauthorized=10); transact rejects unregistered currency (UnknownCurrency=9); settlement uses Token(currency_id); 22/22 mock + 6/6 real-proof tests; wasm builds; clippy clean |
+| M7 | Rust SDK: thread currency_id through note/encrypt/tx/scan; e2e_prove | ✅ | plaintext 72->76 (amount|currencyId|pubkey|blinding); witness + public_signals carry currencyId at [7]; build_transfer takes+filters by currency; 29/29 unit + real snarkjs e2e verifies; clippy clean |
+| M8 | app: currency selector, per-currency balances, per-token decimals | ✅ | currencies.ts registry (id,symbol,decimals,sac); CurrencySelect on Deposit/Send/Withdraw; store actions take currencyId; balancesByCurrency; refreshed circuit wasm/zkey/vkey; signalsScVal carries currency_id; tsc clean; 8/8 app tests (incl real-proof integration). Indexer column deferred (currency is in encrypted plaintext) |
+| M9 | docs + fresh testnet deploy; register a 2nd token to prove no vkey change | ✅ | INTERFACES §0/§3/§4/§5/§5b + CLAUDE.md updated; redeployed `CAJDD2WW…` (init XLM=0), register_token added VUSD=1 on-chain (TokenReg event, token_count=2) with the SAME vkey; addresses.json currencies map + phase2 moved to history; app CONTRACT_ID + currencies updated |
+
+## Phase-3 RESULT ✅ (multi-currency live)
+- Contract `CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4` on testnet.
+- currency 0 = native XLM SAC (`CDLZFC3S…`), currency 1 = VUSD SAC (`CDR3FXAK…`) added via register_token; token_count=2.
+- commitment = Poseidon(amount, currency_id, pk, blinding); currencyId = public signal [7]; NUM_PUBLIC=8, vk IC=9.
+- Adding currency 1 needed only register_token (admin-gated state write): no contract upgrade, no new vkey. Hard requirement met.
+- Tests: veil-crypto 6/6 cross-impl (incl width-4 Poseidon(1,2,3,4)); contract 22 mock + 6 real-proof; sdk 29 + real snarkjs e2e; app 8 (incl real-proof integration); indexer 19. All green; clippy + tsc clean.
+- Note plaintext 76B carries currency; per-currency balances + currency selector in the app.

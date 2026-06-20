@@ -5,18 +5,23 @@
 //! them in-constraint; the SDK computes them in the clear to build witnesses
 //! and to scan. They MUST stay identical — change one, change all three.
 //!
-//! Derivations (matching CLAUDE.md Part 7 / Tornado-Nova's flat scheme):
+//! Derivations (matching CLAUDE.md Part 7 / Tornado-Nova's flat scheme, with the
+//! Phase-3 multi-currency `currency_id` folded into the commitment):
 //! ```text
-//! pk        = Poseidon(sk)                       // note owner field
-//! commitment= Poseidon(amount, pk, blinding)
+//! pk        = Poseidon(sk)                                  // note owner field
+//! commitment= Poseidon(amount, currency_id, pk, blinding)
 //! signature = Poseidon(sk, commitment, pathIndex)
 //! nullifier = Poseidon(commitment, pathIndex, signature)
 //! ```
+//!
+//! Binding `currency_id` into the commitment is what makes a note asset-specific:
+//! a note minted under one currency can never be spent in a transaction that
+//! declares another, because the recomputed leaf would not match the tree.
 
 use ark_bn254::Fr;
 
 use crate::field::{fr_from_be_bytes, fr_from_u64};
-use crate::poseidon::{hash1, hash2, hash3};
+use crate::poseidon::{hash1, hash2, hash3, hash4};
 
 /// The 32-byte secret the user backs up. Everything derives from it.
 #[derive(Clone, Copy, Debug)]
@@ -76,8 +81,11 @@ impl Keypair {
 /// Poseidon `commitment`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Note {
-    /// Value in [0, 2^64) — range-checked in-circuit.
+    /// Value in [0, 2^64) - range-checked in-circuit.
     pub amount: u64,
+    /// Registry index of the asset this note represents. Bound into the
+    /// commitment so the note is spendable only as that currency.
+    pub currency_id: u32,
     /// Owner public key `pk`.
     pub pubkey: Fr,
     /// Randomness `rho`. MUST be sampled with real entropy by the client so two
@@ -86,13 +94,18 @@ pub struct Note {
 }
 
 impl Note {
-    pub fn new(amount: u64, pubkey: Fr, blinding: Fr) -> Self {
-        Note { amount, pubkey, blinding }
+    pub fn new(amount: u64, currency_id: u32, pubkey: Fr, blinding: Fr) -> Self {
+        Note { amount, currency_id, pubkey, blinding }
     }
 
-    /// `commitment = Poseidon(amount, pubkey, blinding)`.
+    /// `commitment = Poseidon(amount, currency_id, pubkey, blinding)`.
     pub fn commitment(&self) -> Fr {
-        hash3(fr_from_u64(self.amount), self.pubkey, self.blinding)
+        hash4(
+            fr_from_u64(self.amount),
+            fr_from_u64(self.currency_id as u64),
+            self.pubkey,
+            self.blinding,
+        )
     }
 
     /// `signature = Poseidon(sk, commitment, pathIndex)`.

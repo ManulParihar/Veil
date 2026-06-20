@@ -40,6 +40,7 @@ export function poseidon(inputs: bigint[]): bigint {
 export const hash1 = (a: bigint) => poseidon([a]);
 export const hash2 = (a: bigint, b: bigint) => poseidon([a, b]);
 export const hash3 = (a: bigint, b: bigint, c: bigint) => poseidon([a, b, c]);
+export const hash4 = (a: bigint, b: bigint, c: bigint, d: bigint) => poseidon([a, b, c, d]);
 export const compress = (l: bigint, r: bigint) => hash2(l, r);
 
 // ── field <-> bytes (32-byte big-endian, the Veil wire encoding) ──
@@ -99,12 +100,15 @@ export function deriveKeys(seed: Uint8Array): Keys {
 
 export interface Note {
   amount: bigint;
+  /** Registry index of the asset; bound into the commitment. */
+  currencyId: number;
   pubkey: bigint;
   blinding: bigint;
 }
 
-/** commitment = Poseidon(amount, pubkey, blinding). */
-export const commitment = (n: Note) => hash3(n.amount, n.pubkey, n.blinding);
+/** commitment = Poseidon(amount, currency_id, pubkey, blinding). */
+export const commitment = (n: Note) =>
+  hash4(n.amount, BigInt(n.currencyId), n.pubkey, n.blinding);
 
 /** signature = Poseidon(sk, commitment, pathIndex). */
 export const signature = (sk: bigint, cm: bigint, pathIndex: bigint) =>
@@ -124,21 +128,32 @@ export const zeroLeaf = () => hash1(0n);
 
 const KEY_DOMAIN = new TextEncoder().encode("veil-note-key");
 
+// Plaintext layout (76 bytes): amount(8) || currencyId(4) || pubkey(32) || blinding(32).
 function noteToPlaintext(n: Note): Uint8Array {
-  const out = new Uint8Array(72);
+  const out = new Uint8Array(76);
   // amount as 8-byte big-endian (u64)
   let a = n.amount;
   for (let i = 7; i >= 0; i--) { out[i] = Number(a & 0xffn); a >>= 8n; }
-  out.set(fieldToBytes(n.pubkey), 8);
-  out.set(fieldToBytes(n.blinding), 40);
+  // currencyId as 4-byte big-endian (u32)
+  let c = n.currencyId >>> 0;
+  for (let i = 11; i >= 8; i--) { out[i] = c & 0xff; c >>>= 8; }
+  out.set(fieldToBytes(n.pubkey), 12);
+  out.set(fieldToBytes(n.blinding), 44);
   return out;
 }
 
 function plaintextToNote(pt: Uint8Array): Note | null {
-  if (pt.length !== 72) return null;
+  if (pt.length !== 76) return null;
   let amount = 0n;
   for (let i = 0; i < 8; i++) amount = (amount << 8n) | BigInt(pt[i]);
-  return { amount, pubkey: bytesToField(pt.slice(8, 40)), blinding: bytesToField(pt.slice(40, 72)) };
+  let currencyId = 0;
+  for (let i = 8; i < 12; i++) currencyId = (currencyId << 8) | pt[i];
+  return {
+    amount,
+    currencyId: currencyId >>> 0,
+    pubkey: bytesToField(pt.slice(12, 44)),
+    blinding: bytesToField(pt.slice(44, 76)),
+  };
 }
 
 function deriveAead(shared: Uint8Array): { viewTag: number; key: Uint8Array } {
@@ -150,7 +165,7 @@ function deriveAead(shared: Uint8Array): { viewTag: number; key: Uint8Array } {
 export interface EncryptedNote {
   ephemeralPub: Uint8Array; // 32
   viewTag: number;
-  ciphertext: Uint8Array; // 88 (72 + 16 tag)
+  ciphertext: Uint8Array; // 92 (76 + 16 tag)
 }
 
 const ZERO_NONCE = new Uint8Array(12);

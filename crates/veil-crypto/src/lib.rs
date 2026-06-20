@@ -34,4 +34,4 @@ mod poseidon_constants;
 pub use ark_bn254::Fr;
 pub use field::{fr_from_be_bytes, fr_from_u64, fr_to_be_bytes};
 pub use note::{Keypair, Note, Seed};
-pub use poseidon::{compress, hash1, hash2, hash3, hashn, zero_leaf};
+pub use poseidon::{compress, hash1, hash2, hash3, hash4, hashn, zero_leaf};

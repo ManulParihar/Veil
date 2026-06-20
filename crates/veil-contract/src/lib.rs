@@ -46,10 +46,29 @@ impl VeilContract {
         }
         storage::set_admin(&env, &admin);
         storage::set_config(&env, &config);
-        storage::set_token(&env, &token); // Phase-2 settlement asset (native XLM SAC)
+        // Register the init token as currency 0 (native XLM SAC). Further
+        // currencies are added later with `register_token`, no upgrade needed.
+        storage::set_token(&env, 0, &token);
+        storage::set_token_count(&env, 1);
         merkle::init(&env, &config);
         storage::bump_instance(&env);
         storage::bump_tree(&env, &config);
+    }
+
+    /// Register a new asset (SAC `Address`) and return its `currency_id`. Admin
+    /// only: this is the whole point of the registry, new tokens are a state
+    /// write, never a contract upgrade or a new vkey. Returns the assigned id.
+    pub fn register_token(env: Env, token: Address) -> Result<u32, Error> {
+        if !storage::is_initialized(&env) {
+            return Err(Error::NotInitialized);
+        }
+        storage::admin(&env).require_auth();
+        let id = storage::token_count(&env);
+        storage::set_token(&env, id, &token);
+        storage::set_token_count(&env, id + 1);
+        storage::bump_instance(&env);
+        events::token_registered(&env, id, &token);
+        Ok(id)
     }
 
     /// The orchestrator. Strict validate → verify → effect → emit.
@@ -82,6 +101,16 @@ impl VeilContract {
         if computed != public_signals.ext_data_hash {
             return Err(Error::ExtDataMismatch);
         }
+        // Currency must be a registered token. Checked for EVERY transact (not
+        // just deposit/withdraw) so a transfer cannot mint notes in an
+        // unregistered "ghost" currency that a later registration would make
+        // spendable against an unfunded pool.
+        let currency_id = public_signals
+            .currency_id_u32()
+            .ok_or(Error::UnknownCurrency)?;
+        if currency_id >= storage::token_count(&env) {
+            return Err(Error::UnknownCurrency);
+        }
         // Tree-full pre-check (insert_two re-checks, but fail early & clearly).
         let cfg = storage::config(&env);
         let next = storage::next_leaf_index(&env);
@@ -101,8 +130,8 @@ impl VeilContract {
             &public_signals.commitment1,
         )?;
 
-        // ── 4. (Phase 2) settle public amount ──
-        settle_public_amount(&env, &public_signals.public_amount, &ext_data)?;
+        // ── 4. (Phase 2) settle public amount against the tx's currency ──
+        settle_public_amount(&env, currency_id, &public_signals.public_amount, &ext_data)?;
 
         // keep structural state alive
         storage::bump_instance(&env);
@@ -155,6 +184,16 @@ impl VeilContract {
     /// The tree config (levels, root_history_size).
     pub fn get_config(env: Env) -> Config {
         storage::config(&env)
+    }
+
+    /// Number of registered currencies (valid ids are `0..token_count`).
+    pub fn token_count(env: Env) -> u32 {
+        storage::token_count(&env)
+    }
+
+    /// The SAC address registered for currency `id`, or `None` if unregistered.
+    pub fn token(env: Env, id: u32) -> Option<Address> {
+        storage::token(&env, id)
     }
 }
 
@@ -251,23 +290,29 @@ fn decode_public_amount(pa: &BytesN<32>) -> Result<Settlement, Error> {
 /// already enforced in-circuit, so the moved asset matches the note delta.
 fn settle_public_amount(
     env: &Env,
+    currency_id: u32,
     public_amount: &BytesN<32>,
     ext: &ExtData,
 ) -> Result<(), Error> {
-    match decode_public_amount(public_amount)? {
+    let settlement = decode_public_amount(public_amount)?;
+    if let Settlement::None = settlement {
+        return Ok(());
+    }
+    // The SAC for this transaction's currency. `currency_id` was already checked
+    // to be a registered token in `transact`, so this lookup cannot be missing.
+    let token_addr = storage::token(env, currency_id).ok_or(Error::UnknownCurrency)?;
+    let token = TokenClient::new(env, &token_addr);
+    let pool = env.current_contract_address();
+    match settlement {
         Settlement::None => {}
         Settlement::Deposit(amount) => {
             // Tie the depositor's authorization to the root (transact) invocation
             // so the nested token.transfer auth is part of one signed auth tree.
             ext.settlement_address.require_auth();
-            let token = TokenClient::new(env, &storage::token(env));
-            let pool = env.current_contract_address();
-            token.transfer(&ext.settlement_address, &MuxedAddress::from(&pool), &amount);
+            token.transfer(&ext.settlement_address, MuxedAddress::from(&pool), &amount);
         }
         Settlement::Withdraw(amount) => {
-            let token = TokenClient::new(env, &storage::token(env));
-            let pool = env.current_contract_address();
-            token.transfer(&pool, &MuxedAddress::from(&ext.settlement_address), &amount);
+            token.transfer(&pool, MuxedAddress::from(&ext.settlement_address), &amount);
         }
     }
     Ok(())

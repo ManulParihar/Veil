@@ -28,12 +28,27 @@ echo "    contract: $CID"
 TOKEN="${VEIL_TOKEN:-$(stellar contract id asset --asset native --network "$NETWORK")}"
 echo "    token (SAC): $TOKEN"
 
-echo "==> init (levels=20, root_history_size=64, token=native XLM)"
+echo "==> init (levels=20, root_history_size=64, token=native XLM as currency 0)"
 stellar contract invoke --id "$CID" --source "$IDENTITY" --network "$NETWORK" \
   -- init --admin "$ADDR" --config '{"levels":20,"root_history_size":64}' --token "$TOKEN"
+
+# Register a second asset to prove the registry works with NO new vkey/upgrade.
+# A custom asset issued by the deployer; its SAC is deployed then registered.
+ASSET2="${VEIL_ASSET2:-VUSD:$ADDR}"
+echo "==> deploy + register a second asset ($ASSET2) as currency 1"
+stellar contract asset deploy --asset "$ASSET2" --source "$IDENTITY" --network "$NETWORK" 2>/dev/null || true
+TOKEN2=$(stellar contract id asset --asset "$ASSET2" --network "$NETWORK")
+echo "    second token (SAC): $TOKEN2"
+stellar contract invoke --id "$CID" --source "$IDENTITY" --network "$NETWORK" \
+  -- register_token --token "$TOKEN2"
 
 echo "==> sanity reads"
 stellar contract invoke --id "$CID" --source "$IDENTITY" --network "$NETWORK" -- get_config
 stellar contract invoke --id "$CID" --source "$IDENTITY" --network "$NETWORK" -- current_root
+echo "    token_count:"
+stellar contract invoke --id "$CID" --source "$IDENTITY" --network "$NETWORK" -- token_count
 
-echo "==> done. contract: $CID"
+echo "==> done."
+echo "    contract:      $CID"
+echo "    currency 0:    $TOKEN  (native XLM)"
+echo "    currency 1:    $TOKEN2 ($ASSET2)"

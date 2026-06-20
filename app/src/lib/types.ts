@@ -2,12 +2,14 @@
 // (lib/, store/) and the presentation layer (pages/, components/).
 
 import type { Note } from "./crypto";
+import type { Signer } from "./signer";
 
-export const CONTRACT_ID = "CDFXWV6K7CKTUYNTEHLJYUQU5WK2DRLMSWB57ASJN5VWB7UNIQPNIGV4";
+export const CONTRACT_ID = "CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4";
 export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 export const RPC_URL = "https://soroban-testnet.stellar.org";
 export const FRIENDBOT = "https://friendbot.stellar.org";
 export const EXPLORER_TX = "https://stellar.expert/explorer/testnet/tx/";
+export const EXPLORER_ACCOUNT = "https://stellar.expert/explorer/testnet/account/";
 export const TREE_LEVELS = 20;
 
 /** Note amounts are denominated in stroops (1 XLM = 10^7 stroops). */
@@ -41,7 +43,7 @@ export interface StoredNote {
 }
 
 export type TxStatus = "building" | "proving" | "submitting" | "success" | "error";
-export type TxKind = "transfer" | "deposit" | "withdraw" | "receive";
+export type TxKind = "transfer" | "deposit" | "withdraw" | "receive" | "faucet" | "fund";
 
 /** An activity-feed entry. */
 export interface TxRecord {
@@ -49,6 +51,8 @@ export interface TxRecord {
   kind: TxKind;
   status: TxStatus;
   amount: bigint;
+  /** Asset the amount is denominated in (registry index). Defaults to 0 (XLM). */
+  currencyId?: number;
   hash?: string; // stellar tx hash
   error?: string;
   createdAt: number;
@@ -88,9 +92,17 @@ export interface WalletState {
   address: VeilAddress | null;
   feeAccount: FeeAccount | null;
 
+  // signer: "local" = seed-derived in-browser Keypair; "wallet" = connected
+  // external wallet via Stellar Wallets Kit.
+  signerKind: "local" | "wallet";
+  connectedWalletId: string | null; // kit wallet id when signerKind === "wallet"
+  connectedAddress: string | null;  // connected G-address when signerKind === "wallet"
+
   // data
   notes: StoredNote[];
-  balanceShielded: bigint; // sum of unspent note amounts
+  balanceShielded: bigint; // sum of unspent note amounts (all currencies, base units)
+  /** Per-currency unspent balance, keyed by currency_id. */
+  balancesByCurrency: Record<number, bigint>;
   currentRoot: string | null; // hex, from chain
   nextLeafIndex: number | null;
   txs: TxRecord[];
@@ -103,7 +115,16 @@ export interface WalletState {
   // lifecycle
   createIdentity: (seedHex?: string) => Promise<void>;
   importIdentity: (seedHex: string) => Promise<void>;
+  /** Connect an external Stellar wallet (Freighter, xBull, …) as the signer and
+   *  derive a deterministic shielded identity from a wallet signature. */
+  connectWallet: () => Promise<void>;
   reset: () => void;
+
+  // signer accessors
+  /** The active Signer (local Keypair or connected wallet). */
+  getSigner: () => Signer;
+  /** The G-address that pays fees / settles / receives faucet drips. */
+  payerPublicKey: () => string | null;
 
   // accounts
   fundFeeAccount: () => Promise<void>;
@@ -113,10 +134,14 @@ export interface WalletState {
   syncChain: () => Promise<void>; // read current root / next index
   scanForNotes: () => Promise<number>; // trial-decrypt events; returns # found
 
-  // actions (each pushes a TxRecord and drives it through proving→submit)
-  send: (toPubkey: string, toEncPub: string, amount: bigint) => Promise<TransactResult>;
-  deposit: (amount: bigint) => Promise<TransactResult>;
-  withdraw: (amount: bigint, toStellar: string) => Promise<TransactResult>;
+  // actions (each pushes a TxRecord and drives it through proving→submit).
+  // `currencyId` selects the asset; amounts are in that currency's base units.
+  send: (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => Promise<TransactResult>;
+  deposit: (currencyId: number, amount: bigint) => Promise<TransactResult>;
+  withdraw: (currencyId: number, amount: bigint, toStellar: string) => Promise<TransactResult>;
   /** demo helper: create a self-note via a real on-chain transact (Phase-1 mechanics) */
-  selfMintDemo: (amount: bigint) => Promise<TransactResult>;
+  selfMintDemo: (currencyId: number, amount: bigint) => Promise<TransactResult>;
+  /** testnet faucet: drip a custom asset (e.g. VUSD) to the fee account so it can
+   *  then be deposited. Establishes the trustline if missing. Returns the tx hash. */
+  faucetDrip: (currencyId: number) => Promise<string>;
 }

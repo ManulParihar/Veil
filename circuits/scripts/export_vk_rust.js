@@ -78,16 +78,17 @@ const a = g1(proof.pi_a);
 const b = g2(proof.pi_b);
 const c = g1(proof.pi_c);
 let f = `//! GENERATED real proof fixture (circuits/scripts/export_vk_rust.js).
-//! A genuine Groth16 proof + its 7 public signals for the sample transfer, used
-//! by tests/verifier.rs to validate the REAL BN254 pairing path against the real
-//! VK in the Soroban host environment. Do not edit by hand.
+//! A genuine Groth16 proof + its ${pub.length} public signals for the sample
+//! transfer, used by tests/verifier.rs to validate the REAL BN254 pairing path
+//! against the real VK in the Soroban host environment. Do not edit by hand.
 
 pub const PROOF_A: [u8; 64] = ${bytesLit(a)};
 pub const PROOF_B: [u8; 128] = ${bytesLit(b)};
 pub const PROOF_C: [u8; 64] = ${bytesLit(c)};
 
-/// Public signals in INTERFACES §3 order: [root, publicAmount, extDataHash, nf0, nf1, cm0, cm1].
-pub const PUBLIC_SIGNALS: [[u8; 32]; 7] = [
+/// Public signals in INTERFACES §3 order:
+/// [root, publicAmount, extDataHash, nf0, nf1, cm0, cm1, currencyId].
+pub const PUBLIC_SIGNALS: [[u8; 32]; ${pub.length}] = [
 ${pub.map((x) => "    " + bytesLit(be32(x)) + ",").join("\n")}
 ];
 `;

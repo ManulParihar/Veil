@@ -105,7 +105,7 @@ fn g2(env: &Env, bytes: &[u8; 128]) -> Bn254G2Affine {
 }
 
 impl PublicSignals {
-    /// The 7 signals in the FROZEN order of INTERFACES §3, as `BytesN<32>` field
+    /// The 8 signals in the FROZEN order of INTERFACES §3, as `BytesN<32>` field
     /// elements. This is the exact order the circuit's vkey was generated
     /// against — do not reorder.
     pub fn as_field_array(&self, env: &Env) -> Vec<BytesN<32>> {
@@ -117,6 +117,7 @@ impl PublicSignals {
         v.push_back(self.nullifier1.clone());
         v.push_back(self.commitment0.clone());
         v.push_back(self.commitment1.clone());
+        v.push_back(self.currency_id.clone());
         v
     }
 }
@@ -163,6 +164,7 @@ mod real_proof_test {
             nullifier1: BytesN::from_array(env, &PUBLIC_SIGNALS[4]),
             commitment0: BytesN::from_array(env, &PUBLIC_SIGNALS[5]),
             commitment1: BytesN::from_array(env, &PUBLIC_SIGNALS[6]),
+            currency_id: BytesN::from_array(env, &PUBLIC_SIGNALS[7]),
         };
         (proof, s)
     }

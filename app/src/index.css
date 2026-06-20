@@ -39,6 +39,9 @@ body {
   .btn-ghost {
     @apply btn bg-veil-surface hover:bg-veil-border border border-veil-border text-veil-text;
   }
+  .btn-secondary {
+    @apply btn bg-veil-surface hover:bg-veil-border border border-veil-primary/50 text-veil-text;
+  }
   .input {
     @apply w-full bg-veil-surface border border-veil-border rounded-xl px-4 py-3
            text-veil-text placeholder:text-veil-muted outline-none

@@ -90,6 +90,7 @@ impl Wallet {
     #[allow(clippy::too_many_arguments)]
     pub fn build_transfer(
         &self,
+        currency_id: u32,
         amount: u64,
         recipient_pubkey: Fr,
         recipient_enc: &[u8; 32],
@@ -99,12 +100,13 @@ impl Wallet {
     ) -> Result<PreparedTransfer, WalletError> {
         let sk = self.keys.spend_key();
 
-        // Pick the smallest unspent note that covers `amount`.
+        // Pick the smallest unspent note of THIS currency that covers `amount`.
+        // A transfer is single-currency, so we never mix assets in one tx.
         let chosen = self
             .store
             .list_unspent()
             .into_iter()
-            .filter(|n| n.note.amount >= amount)
+            .filter(|n| n.note.currency_id == currency_id && n.note.amount >= amount)
             .min_by_key(|n| n.note.amount)
             .ok_or(WalletError::InsufficientFunds)?;
         let leaf_index = chosen.leaf_index.ok_or(WalletError::NoLeafIndex)?;
@@ -128,16 +130,19 @@ impl Wallet {
         // Dummy second input: zero value, membership gated off in-circuit. Use a
         // path index distinct from the real one so the two nullifiers differ.
         let dummy_index = path_index.wrapping_add(1);
-        let dummy_input = WitnessInput::dummy(sk, dummy_blinding, dummy_index);
+        let dummy_input = WitnessInput::dummy(currency_id, sk, dummy_blinding, dummy_index);
 
         // Outputs: recipient gets `amount`, change is the remainder back to self.
+        // Both inherit the input's currency.
         let change_amount = input_note.amount - amount; // input >= amount guaranteed
-        let recipient_note = Note::new(amount, recipient_pubkey, recipient_blinding);
-        let change_note = Note::new(change_amount, self.keys.public_key(), change_blinding);
+        let recipient_note = Note::new(amount, currency_id, recipient_pubkey, recipient_blinding);
+        let change_note =
+            Note::new(change_amount, currency_id, self.keys.public_key(), change_blinding);
 
-        let out_recipient = WitnessOutput::new(amount, recipient_pubkey, recipient_blinding);
+        let out_recipient =
+            WitnessOutput::new(currency_id, amount, recipient_pubkey, recipient_blinding);
         let out_change =
-            WitnessOutput::new(change_amount, self.keys.public_key(), change_blinding);
+            WitnessOutput::new(currency_id, change_amount, self.keys.public_key(), change_blinding);
 
         // Encrypt each output to its owner; the wire blob carries the ephemeral
         // pubkey so the recipient's scanner is self-contained.
@@ -159,6 +164,7 @@ impl Wallet {
             root,
             public_amount: Fr::from(0u64),
             ext_data_hash: ext_data.ext_data_hash(),
+            currency_id,
             inputs: [real_input, dummy_input],
             outputs: [out_recipient, out_change],
         };
@@ -188,13 +194,15 @@ mod tests {
         let recipient = Keys::from_seed([41u8; 32]);
 
         // Seed the sender with a note actually inserted into its tree mirror.
-        let note = Note::new(100, sender.keys.public_key(), Fr::from(11u64));
+        let cur = 2u32;
+        let note = Note::new(100, cur, sender.keys.public_key(), Fr::from(11u64));
         let idx = sender.tree.insert(note.commitment());
         sender.store.add(note, idx);
         assert_eq!(sender.balance(), 100);
 
         let prepared = sender
             .build_transfer(
+                cur,
                 70,
                 recipient.public_key(),
                 &recipient.enc_public_bytes(),
@@ -241,19 +249,43 @@ mod tests {
         assert_eq!(change_found.found.len(), 1);
         assert_eq!(change_found.found[0].note.amount, 30);
 
-        // Witness serializes to circom-named JSON; 7 public signals.
+        // Witness serializes to circom-named JSON; 8 public signals, currency at [7].
         let json = w.to_json_string();
         assert!(json.contains("inPathElements"));
-        assert_eq!(w.public_signals().len(), 7);
+        assert!(json.contains("currencyId"));
+        assert_eq!(w.public_signals().len(), 8);
+        assert_eq!(w.public_signals()[7], cur.to_string());
+        assert_eq!(prepared.recipient_note.currency_id, cur);
+        assert_eq!(prepared.change_note.currency_id, cur);
     }
 
     #[test]
     fn insufficient_funds() {
         let mut w = Wallet::from_seed([42u8; 32]);
-        let note = Note::new(10, w.keys.public_key(), Fr::from(1u64));
+        let note = Note::new(10, 0, w.keys.public_key(), Fr::from(1u64));
         let idx = w.tree.insert(note.commitment());
         w.store.add(note, idx);
         let r = w.build_transfer(
+            0,
+            50,
+            Fr::from(5u64),
+            &[0u8; 32],
+            Fr::from(1u64),
+            Fr::from(2u64),
+            Fr::from(3u64),
+        );
+        assert!(matches!(r, Err(WalletError::InsufficientFunds)));
+    }
+
+    #[test]
+    fn wrong_currency_not_selected() {
+        // A note in currency 1 cannot fund a transfer requested in currency 0.
+        let mut w = Wallet::from_seed([43u8; 32]);
+        let note = Note::new(100, 1, w.keys.public_key(), Fr::from(1u64));
+        let idx = w.tree.insert(note.commitment());
+        w.store.add(note, idx);
+        let r = w.build_transfer(
+            0, // requesting currency 0; only a currency-1 note exists
             50,
             Fr::from(5u64),
             &[0u8; 32],

@@ -35,6 +35,11 @@ impl StoredNote {
         self.note.commitment()
     }
 
+    /// The asset (registry index) this note is denominated in.
+    pub fn currency_id(&self) -> u32 {
+        self.note.currency_id
+    }
+
     /// The nullifier for spending this note with the given spend key.
     /// Requires a known `leaf_index` (the nullifier binds tree position).
     pub fn nullifier(&self, private_key: Fr) -> Option<Fr> {
@@ -113,7 +118,7 @@ mod tests {
     use crate::keys::Keys;
 
     fn note_for(keys: &Keys, amount: u64, blind: u64) -> Note {
-        Note::new(amount, keys.public_key(), Fr::from(blind))
+        Note::new(amount, 0, keys.public_key(), Fr::from(blind))
     }
 
     #[test]

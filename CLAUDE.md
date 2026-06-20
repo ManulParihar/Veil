@@ -4,6 +4,8 @@
 
 Veil is a shielded pool on Stellar/Soroban: real value custodied in a single contract, private "notes" committed in an incremental Merkle tree, and spending via zero-knowledge proofs that conserve value and prevent double-spends. Phase 1 is pure private transfer with value assumed already in the pool; Phase 2 adds public deposit/withdraw. The system is architected to be production-ready (nothing needs ripping out to scale), while being honest about what's real (ZK, nullifiers, Merkle), what's mocked (single-contributor trusted setup), and known leaks (fee-payer deanonymization).
 
+**Phase 3 (multi-currency, shipped):** one pool holds many assets. Each note binds a `currency_id` into its commitment (`commitment = Poseidon(amount, currency_id, pk, blinding)`, a 4-input Poseidon / t=5), and `currencyId` is public signal [7], fed into all four commitments so a transaction is single-asset by construction. The contract keeps a `Token(u32) -> Address` registry with a `TokenCount`; the admin adds assets via `register_token` (a state write, gated by `admin.require_auth()`), which needs no contract upgrade and no new verifying key because the circuit treats `currency_id` as an opaque field element. `transact` rejects unregistered currencies, and deposit/withdraw settle the SAC for the transaction's currency, keeping per-token custody isolated. The frozen wire details live in INTERFACES.md (§3 signals, §5b registry).
+
 ---
 
 # Part 1: Architecture Overview

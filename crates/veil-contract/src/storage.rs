@@ -22,8 +22,11 @@ pub enum DataKey {
     // ── instance storage (small, global) ──
     Admin,
     Config,
-    /// Phase-2: the Stellar Asset Contract (SAC) backing the pool (native XLM).
-    Token,
+    /// Multi-currency registry: the Stellar Asset Contract (SAC) backing the
+    /// currency with this `u32` id. Index 0 is the init token (native XLM).
+    Token(u32),
+    /// Number of registered currencies; also the next id `register_token` assigns.
+    TokenCount,
     CurrentRootIndex,
     NextLeafIndex,
     /// Precomputed empty-subtree hashes per level `[0..levels]`, held as a
@@ -61,7 +64,6 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
-#[allow(dead_code)]
 pub fn admin(env: &Env) -> Address {
     env.storage().instance().get(&DataKey::Admin).unwrap()
 }
@@ -76,12 +78,26 @@ pub fn config(env: &Env) -> Config {
     env.storage().instance().get(&DataKey::Config).unwrap()
 }
 
-pub fn set_token(env: &Env, token: &Address) {
-    env.storage().instance().set(&DataKey::Token, token);
+// ── token registry (multi-currency) ──
+
+pub fn set_token(env: &Env, id: u32, token: &Address) {
+    env.storage().instance().set(&DataKey::Token(id), token);
 }
 
-pub fn token(env: &Env) -> Address {
-    env.storage().instance().get(&DataKey::Token).unwrap()
+/// The SAC address registered for currency `id`, or `None` if unregistered.
+pub fn token(env: &Env, id: u32) -> Option<Address> {
+    env.storage().instance().get(&DataKey::Token(id))
+}
+
+pub fn set_token_count(env: &Env, count: u32) {
+    env.storage().instance().set(&DataKey::TokenCount, &count);
+}
+
+pub fn token_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TokenCount)
+        .unwrap_or(0)
 }
 
 // ── cursors ──

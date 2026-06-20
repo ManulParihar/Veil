@@ -55,6 +55,7 @@ fn signals(env: &Env) -> PublicSignals {
         nullifier1: s(4),
         commitment0: s(5),
         commitment1: s(6),
+        currency_id: s(7),
     }
 }
 

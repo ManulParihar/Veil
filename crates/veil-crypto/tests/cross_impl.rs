@@ -8,7 +8,7 @@
 
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
-use veil_crypto::{fr_from_u64, hash2, hash3, Keypair, Note};
+use veil_crypto::{fr_from_u64, hash2, hash3, hash4, Keypair, Note};
 
 fn dec(x: Fr) -> String {
     x.into_bigint().to_string()
@@ -37,12 +37,26 @@ fn poseidon_1_2_3_matches_circomlib() {
     );
 }
 
+/// `Poseidon([1,2,3,4])` width-4 vector (circomlib canonical). This is the
+/// hash the multi-currency commitment is built on, so the circom `Poseidon(4)`
+/// and the TS `circomlibjs` mirror must reproduce it exactly.
+#[test]
+fn poseidon_1_2_3_4_matches_circomlib() {
+    let got = hash4(fr_from_u64(1), fr_from_u64(2), fr_from_u64(3), fr_from_u64(4));
+    assert_eq!(
+        dec(got),
+        "18821383157269793795438455681495246036402687001665670618754263018637548127333",
+        "Poseidon(1,2,3,4) diverged from circomlib - the width-4 gate is broken"
+    );
+}
+
 /// Pin the note pipeline end to end with fixed, simple inputs so the circuit
-/// can assert the same decimals. amount=100, sk=7, blinding=42, pathIndex=3.
+/// can assert the same decimals. amount=100, currency_id=1, sk=7, blinding=42,
+/// pathIndex=3.
 #[test]
 fn note_commitment_and_nullifier_vectors() {
     let kp = Keypair::from_private(fr_from_u64(7));
-    let note = Note::new(100, kp.public_key, fr_from_u64(42));
+    let note = Note::new(100, 1, kp.public_key, fr_from_u64(42));
     let cm = note.commitment();
     let nf = note.nullifier(kp.private_key, 3);
     println!("VEC pk={}", dec(kp.public_key));
@@ -58,12 +72,12 @@ fn note_commitment_and_nullifier_vectors() {
     // `outputCommitment` / `inputNullifier` must equal them for the same inputs.
     assert_eq!(
         dec(cm),
-        "9393485090685125340160626343171654838660902907959359341345939329381592242612",
+        "1368167316025322220717257820021635503343550471517006236415294408329041011825",
         "commitment vector drifted"
     );
     assert_eq!(
         dec(nf),
-        "15859786158883198570120416352149778089550541078065235834061119830959898607558",
+        "5670915370410439998081535105208692180002396374147198233286504856651004576590",
         "nullifier vector drifted"
     );
 }
@@ -77,6 +91,7 @@ fn matches_light_poseidon_reference() {
         vec![fr_from_u64(1)],
         vec![fr_from_u64(1), fr_from_u64(2)],
         vec![fr_from_u64(7), fr_from_u64(13), fr_from_u64(99)],
+        vec![fr_from_u64(100), fr_from_u64(1), fr_from_u64(7), fr_from_u64(42)],
     ] {
         let ours = veil_crypto::hashn(&inputs);
         let mut reference = Poseidon::<Fr>::new_circom(inputs.len()).unwrap();
@@ -88,7 +103,7 @@ fn matches_light_poseidon_reference() {
 /// Determinism: same inputs → same outputs, every run, every platform.
 #[test]
 fn derivations_are_deterministic() {
-    let a = Note::new(5, fr_from_u64(11), fr_from_u64(99)).commitment();
-    let b = Note::new(5, fr_from_u64(11), fr_from_u64(99)).commitment();
+    let a = Note::new(5, 2, fr_from_u64(11), fr_from_u64(99)).commitment();
+    let b = Note::new(5, 2, fr_from_u64(11), fr_from_u64(99)).commitment();
     assert_eq!(a, b);
 }

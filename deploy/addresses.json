@@ -2,20 +2,28 @@
   "testnet": {
     "network_passphrase": "Test SDF Network ; September 2015",
     "rpc_url": "https://soroban-testnet.stellar.org",
-    "contract_id": "CDFXWV6K7CKTUYNTEHLJYUQU5WK2DRLMSWB57ASJN5VWB7UNIQPNIGV4",
-    "token_sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-    "token_asset": "native (XLM)",
+    "contract_id": "CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4",
     "deployer": "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
     "config": { "levels": 20, "root_history_size": 64 },
     "genesis_root": "2d3c07bea6883428edd2d80d07cec4b911309fed96743822d6aadea06313a951",
-    "phase2": {
-      "note": "Real-XLM settlement live: deposit pulls native XLM into the pool, withdraw releases it. Conservation enforced in-circuit; settlement_address bound into extDataHash. Validated in-browser + on-chain; pool custody = deposits − withdrawals.",
-      "sample_deposit_tx": "d4521703855261",
-      "sample_withdraw_tx": "e8b481309f956a"
+    "currencies": {
+      "0": { "symbol": "XLM", "decimals": 7, "sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC", "asset": "native (XLM)" },
+      "1": { "symbol": "VUSD", "decimals": 7, "sac": "CDR3FXAKYZKDXMF53LZM5LIER7SYRKMA2EXGDBO3KODCCBEBCY5XJS64", "asset": "VUSD:GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM" }
+    },
+    "phase3": {
+      "note": "Multi-currency in a single contract. Each note binds a currency_id into its commitment (Poseidon(amount,currency_id,pk,blinding)); currencyId is public signal [7], NUM_PUBLIC=8. Admin adds assets via register_token (Token(u32) registry + TokenCount) with no contract upgrade and no new vkey. Deposit/withdraw settle Token(currency_id); transact rejects unregistered currencies.",
+      "deploy_tx": "8ae0cad9a520a262552182eff5f88ac27ca42c10e4cc9b571a1a8cab6e1951cb",
+      "init_tx": "3cdac06e014d308ccece6055277afac3f5312b0121feeabe44725b9d648eac2d",
+      "register_token_tx": "744822eecab0c83d2a9c23712eae4b6db3bd30b2399a35823e0800b7fd093f39",
+      "token_count": 2
     },
     "history": {
+      "phase2_contract": "CDFXWV6K7CKTUYNTEHLJYUQU5WK2DRLMSWB57ASJN5VWB7UNIQPNIGV4",
+      "phase2_note": "Single-asset native-XLM pool with real-XLM settlement. Superseded by the Phase-3 multi-currency contract above. Breaking change: new commitment formula + 8 public signals + Token(u32) registry, so the tree, notes and vkey are incompatible and a fresh deployment was required.",
+      "phase2_sample_deposit_tx": "d4521703855261",
+      "phase2_sample_withdraw_tx": "e8b481309f956a",
       "phase1_contract": "CBWUPNPVE2WQIZZETYPQTAGFQLYSDC3BWHAIE6QT7ZMIMAYYIUKPZZUM",
-      "first_phase1_transact_tx": "84f7ee36287a892d4feeef19d1236d6408517b3312939831a53b6fb97f1a1fc1"
+      "phase1_first_transact_tx": "84f7ee36287a892d4feeef19d1236d6408517b3312939831a53b6fb97f1a1fc1"
     }
   }
 }

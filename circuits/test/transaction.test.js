@@ -16,10 +16,11 @@ const INCLUDE = [
 ];
 
 // Pinned vectors from INTERFACES.md §0 / veil-crypto cross_impl test.
+// Pinned for sk=7, amount=100, currencyId=1, blinding=42, pathIndex=3.
 const PIN = {
   pk: "7061949393491957813657776856458368574501817871421526214197139795307327923534",
-  cm: "9393485090685125340160626343171654838660902907959359341345939329381592242612",
-  nf: "15859786158883198570120416352149778089550541078065235834061119830959898607558",
+  cm: "1368167316025322220717257820021635503343550471517006236415294408329041011825",
+  nf: "5670915370410439998081535105208692180002396374147198233286504856651004576590",
 };
 
 let passed = 0,
@@ -44,8 +45,8 @@ const ZEROS20 = Array(20).fill("0");
     path.join(__dirname, "circuits/note_vec.circom"),
     { include: INCLUDE }
   );
-  const pos3 = await wasm_tester(
-    path.join(__dirname, "circuits/pos3.circom"),
+  const pos4 = await wasm_tester(
+    path.join(__dirname, "circuits/pos4.circom"),
     { include: INCLUDE }
   );
   const tx = await wasm_tester(
@@ -54,23 +55,26 @@ const ZEROS20 = Array(20).fill("0");
   );
 
   // helpers that compute the circuit-consistent public values
-  async function noteNullifierAndCommitment(sk, amount, blinding, idx) {
+  async function noteNullifierAndCommitment(sk, amount, currencyId, blinding, idx) {
     const w = await noteVec.calculateWitness(
-      { sk, amount, blinding, pathIndex: idx },
+      { sk, amount, currencyId, blinding, pathIndex: idx },
       true
     );
     // output order in witness: [1]=pk, [2]=cm, [3]=nf
     return { cm: w[2].toString(), nf: w[3].toString() };
   }
-  async function commitment(amount, pubkey, blinding) {
-    const w = await pos3.calculateWitness({ a: amount, b: pubkey, c: blinding }, true);
+  async function commitment(amount, currencyId, pubkey, blinding) {
+    const w = await pos4.calculateWitness(
+      { a: amount, b: currencyId, c: pubkey, d: blinding },
+      true
+    );
     return w[1].toString();
   }
 
   // ---- 1. cross-impl gate, through the circuit ----
   await test("Poseidon note pipeline matches pinned veil-crypto vectors", async () => {
     const w = await noteVec.calculateWitness(
-      { sk: "7", amount: "100", blinding: "42", pathIndex: "3" },
+      { sk: "7", amount: "100", currencyId: "1", blinding: "42", pathIndex: "3" },
       true
     );
     await noteVec.checkConstraints(w);
@@ -81,10 +85,11 @@ const ZEROS20 = Array(20).fill("0");
   // Both inputs are zero-value dummies (Merkle membership gated off), funded by
   // publicAmount = 100, split into outputs 100 + 0.
   await test("accepts a valid value-conserving witness", async () => {
-    const in0 = await noteNullifierAndCommitment("11", "0", "111", "0");
-    const in1 = await noteNullifierAndCommitment("22", "0", "222", "1");
-    const outCm0 = await commitment("100", "7", "5");
-    const outCm1 = await commitment("0", "7", "6");
+    const cur = "5";
+    const in0 = await noteNullifierAndCommitment("11", "0", cur, "111", "0");
+    const in1 = await noteNullifierAndCommitment("22", "0", cur, "222", "1");
+    const outCm0 = await commitment("100", cur, "7", "5");
+    const outCm1 = await commitment("0", cur, "7", "6");
 
     const inp = {
       root: "0",
@@ -92,6 +97,7 @@ const ZEROS20 = Array(20).fill("0");
       extDataHash: "12345",
       inputNullifier: [in0.nf, in1.nf],
       outputCommitment: [outCm0, outCm1],
+      currencyId: cur,
       inAmount: ["0", "0"],
       inPrivateKey: ["11", "22"],
       inBlinding: ["111", "222"],
@@ -107,16 +113,18 @@ const ZEROS20 = Array(20).fill("0");
 
   // ---- 3. reject value non-conservation ----
   await test("rejects value non-conservation", async () => {
-    const in0 = await noteNullifierAndCommitment("11", "0", "111", "0");
-    const in1 = await noteNullifierAndCommitment("22", "0", "222", "1");
-    const outCm0 = await commitment("100", "7", "5");
-    const outCm1 = await commitment("1", "7", "6");
+    const cur = "5";
+    const in0 = await noteNullifierAndCommitment("11", "0", cur, "111", "0");
+    const in1 = await noteNullifierAndCommitment("22", "0", cur, "222", "1");
+    const outCm0 = await commitment("100", cur, "7", "5");
+    const outCm1 = await commitment("1", cur, "7", "6");
     const inp = {
       root: "0",
       publicAmount: "100",
       extDataHash: "12345",
       inputNullifier: [in0.nf, in1.nf],
       outputCommitment: [outCm0, outCm1],
+      currencyId: cur,
       inAmount: ["0", "0"],
       inPrivateKey: ["11", "22"],
       inBlinding: ["111", "222"],
@@ -138,13 +146,15 @@ const ZEROS20 = Array(20).fill("0");
   // ---- 4. reject duplicate input nullifiers ----
   await test("rejects duplicate input nullifiers", async () => {
     // identical dummy inputs → identical nullifiers → sameNullifier === 0 fails
-    const dup = await noteNullifierAndCommitment("11", "0", "111", "0");
+    const cur = "5";
+    const dup = await noteNullifierAndCommitment("11", "0", cur, "111", "0");
     const inp = {
       root: "0",
       publicAmount: "0",
       extDataHash: "1",
       inputNullifier: [dup.nf, dup.nf],
-      outputCommitment: [await commitment("0", "7", "5"), await commitment("0", "7", "6")],
+      outputCommitment: [await commitment("0", cur, "7", "5"), await commitment("0", cur, "7", "6")],
+      currencyId: cur,
       inAmount: ["0", "0"],
       inPrivateKey: ["11", "11"],
       inBlinding: ["111", "111"],

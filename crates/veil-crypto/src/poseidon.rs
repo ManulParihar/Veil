@@ -22,8 +22,15 @@ fn pow5(x: Fr) -> Fr {
     x4 * x
 }
 
+/// Maximum supported state size `t`. circomlib `Poseidon(width)` uses
+/// `t = width + 1`; we support widths 1..=4, so the widest state is t=5 (the
+/// 4-input commitment `Poseidon(amount, currency_id, pk, blinding)`). The
+/// permutation only ever touches the first `t` slots, so a fixed-size array
+/// sized to the maximum keeps the code `no_std` and allocation-free.
+const MAX_T: usize = 5;
+
 #[allow(clippy::needless_range_loop)] // indices index ark[r*t+i] / mds[i][j]
-fn permute(p: &PoseidonParams, state: &mut [Fr; 4]) {
+fn permute(p: &PoseidonParams, state: &mut [Fr; MAX_T]) {
     let t = p.t;
     let half_full = p.full_rounds / 2;
     let rounds = p.full_rounds + p.partial_rounds;
@@ -43,7 +50,7 @@ fn permute(p: &PoseidonParams, state: &mut [Fr; 4]) {
             state[0] = pow5(state[0]);
         }
         // MDS mix
-        let mut next = [Fr::zero(); 4];
+        let mut next = [Fr::zero(); MAX_T];
         for i in 0..t {
             let mut acc = Fr::zero();
             for j in 0..t {
@@ -55,10 +62,10 @@ fn permute(p: &PoseidonParams, state: &mut [Fr; 4]) {
     }
 }
 
-/// Hash an input vector of width 1, 2 or 3 with the circomlib parameter set.
+/// Hash an input vector of width 1, 2, 3 or 4 with the circomlib parameter set.
 pub fn hashn(inputs: &[Fr]) -> Fr {
     let p = params_for_width(inputs.len());
-    let mut state = [Fr::zero(); 4];
+    let mut state = [Fr::zero(); MAX_T];
     // state[0] is the capacity (0); inputs occupy 1..t.
     for (i, inp) in inputs.iter().enumerate() {
         state[i + 1] = *inp;
@@ -77,9 +84,15 @@ pub fn hash2(a: Fr, b: Fr) -> Fr {
     hashn(&[a, b])
 }
 
-/// `Poseidon(a, b, c)` — three inputs (commitment / signature / nullifier).
+/// `Poseidon(a, b, c)` - three inputs (signature / nullifier).
 pub fn hash3(a: Fr, b: Fr, c: Fr) -> Fr {
     hashn(&[a, b, c])
+}
+
+/// `Poseidon(a, b, c, d)` - four inputs (the multi-currency note commitment
+/// `Poseidon(amount, currency_id, pk, blinding)`).
+pub fn hash4(a: Fr, b: Fr, c: Fr, d: Fr) -> Fr {
+    hashn(&[a, b, c, d])
 }
 
 /// Merkle parent hash. Identical to `hash2`, named for intent at call sites and

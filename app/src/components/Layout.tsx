@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { ReactNode } from "react";
 import { useWallet } from "../store/wallet";
-import { Logo, truncate } from "./ui";
+import { Logo, AddressBadge, ExplorerLink } from "./ui";
+import { EXPLORER_ACCOUNT } from "../lib/types";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: "M3 12l9-9 9 9M5 10v10h14V10" },
@@ -54,7 +55,14 @@ export default function Layout({ children }: { children: ReactNode }) {
                 {feeAccount?.funded ? "funded" : "unfunded"}
               </span>
             </div>
-            <div className="mono text-xs mt-1 text-veil-muted">{feeAccount ? truncate(feeAccount.publicKey) : "—"}</div>
+            {feeAccount ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <AddressBadge value={feeAccount.publicKey} testid="sidebar-fee-account" />
+                <ExplorerLink url={EXPLORER_ACCOUNT + feeAccount.publicKey} testid="sidebar-fee-explorer" />
+              </div>
+            ) : (
+              <div className="mono text-xs mt-1 text-veil-muted">—</div>
+            )}
             {feeBalance && <div className="text-xs mt-1">{parseFloat(feeBalance).toFixed(2)} XLM</div>}
           </div>
           <div className="flex items-center justify-between px-1">

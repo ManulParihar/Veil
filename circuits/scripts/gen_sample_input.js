@@ -14,13 +14,15 @@ const ZEROS20 = Array(20).fill("0");
 
 (async () => {
   const noteVec = await wasm_tester(path.join(__dirname, "../test/circuits/note_vec.circom"), { include: INCLUDE });
-  const pos3 = await wasm_tester(path.join(__dirname, "../test/circuits/pos3.circom"), { include: INCLUDE });
+  const pos4 = await wasm_tester(path.join(__dirname, "../test/circuits/pos4.circom"), { include: INCLUDE });
+
+  const CUR = "1"; // sample currency id
 
   const nfcm = async (sk, amount, blinding, idx) => {
-    const w = await noteVec.calculateWitness({ sk, amount, blinding, pathIndex: idx }, true);
+    const w = await noteVec.calculateWitness({ sk, amount, currencyId: CUR, blinding, pathIndex: idx }, true);
     return { cm: w[2].toString(), nf: w[3].toString() };
   };
-  const cm = async (a, b, c) => (await pos3.calculateWitness({ a, b, c }, true))[1].toString();
+  const cm = async (a, b, c) => (await pos4.calculateWitness({ a, b: CUR, c: b, d: c }, true))[1].toString();
 
   const in0 = await nfcm("11", "0", "111", "0");
   const in1 = await nfcm("22", "0", "222", "1");
@@ -33,6 +35,7 @@ const ZEROS20 = Array(20).fill("0");
     extDataHash: "12345",
     inputNullifier: [in0.nf, in1.nf],
     outputCommitment: [outCm0, outCm1],
+    currencyId: CUR,
     inAmount: ["0", "0"],
     inPrivateKey: ["11", "22"],
     inBlinding: ["111", "222"],

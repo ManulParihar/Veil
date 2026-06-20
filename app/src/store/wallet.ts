@@ -11,7 +11,12 @@ import { buildDeposit, buildTransfer, buildWithdraw, type WitnessBundle } from "
 import { prove } from "../lib/prover";
 import { proofToBytes, publicSignalsToBytes } from "../lib/proof";
 import * as chain from "../lib/chain";
+import { Keypair } from "@stellar/stellar-sdk";
+import { LocalSigner, WalletKitSigner, walletSeedFromSignature, type Signer } from "../lib/signer";
+import * as walletkit from "../lib/walletkit";
 import { scanEvents } from "../lib/scan";
+import { faucetFor, faucetSecret } from "../lib/faucet";
+import { currencyById, toBaseUnits } from "../lib/currencies";
 import {
   type WalletState, type StoredNote, type TxRecord, type FeeAccount, type TransactResult,
   CONTRACT_ID,
@@ -41,6 +46,17 @@ function totalUnspent(notes: StoredNote[]): bigint {
   return notes.filter((n) => !n.spent).reduce((s, n) => s + n.note.amount, 0n);
 }
 
+/** Per-currency unspent totals, keyed by currency_id. */
+function balancesByCurrency(notes: StoredNote[]): Record<number, bigint> {
+  const out: Record<number, bigint> = {};
+  for (const n of notes) {
+    if (n.spent) continue;
+    const c = n.note.currencyId;
+    out[c] = (out[c] ?? 0n) + n.note.amount;
+  }
+  return out;
+}
+
 interface Internal extends WalletState {
   _feeSecret: string | null;
 }
@@ -60,19 +76,21 @@ export const useWallet = create<Internal>()(
       // run a witness → prove → submit pipeline, driving a TxRecord
       const runFlow = async (
         kind: TxRecord["kind"],
+        currencyId: number,
         amount: bigint,
         bundle: WitnessBundle,
         onSuccess: (res: chain.SubmitResult) => void
       ): Promise<TransactResult> => {
-        const { seedHex, _feeSecret } = get();
-        if (!seedHex || !_feeSecret) throw new Error("wallet not ready");
-        const txId = pushTx({ kind, amount, status: "building", stage: "Assembling witness" });
+        const { seedHex } = get();
+        if (!seedHex) throw new Error("wallet not ready");
+        const signer = get().getSigner();
+        const txId = pushTx({ kind, currencyId, amount, status: "building", stage: "Assembling witness" });
         try {
           updateTx(txId, { status: "proving", stage: "Generating zero-knowledge proof" });
           const { proof, publicSignals } = await prove(bundle.input);
           updateTx(txId, { status: "submitting", stage: "Submitting to Stellar" });
           const res = await chain.submitTransact(
-            _feeSecret,
+            signer,
             proofToBytes(proof),
             publicSignalsToBytes(publicSignals),
             {
@@ -88,7 +106,12 @@ export const useWallet = create<Internal>()(
           );
           onSuccess(res);
           updateTx(txId, { status: "success", hash: res.hash, stage: undefined });
-          set((s) => ({ balanceShielded: totalUnspent(s.notes), currentRoot: res.newRoot, busy: false }));
+          set((s) => ({
+            balanceShielded: totalUnspent(s.notes),
+            balancesByCurrency: balancesByCurrency(s.notes),
+            currentRoot: res.newRoot,
+            busy: false,
+          }));
           return { hash: res.hash, newRoot: res.newRoot, leafIndices: res.leafIndices };
         } catch (e: any) {
           updateTx(txId, { status: "error", error: String(e?.message ?? e), stage: undefined });
@@ -102,8 +125,12 @@ export const useWallet = create<Internal>()(
         seedHex: null,
         address: null,
         feeAccount: null,
+        signerKind: "local",
+        connectedWalletId: null,
+        connectedAddress: null,
         notes: [],
         balanceShielded: 0n,
+        balancesByCurrency: {},
         currentRoot: null,
         nextLeafIndex: null,
         txs: [],
@@ -112,14 +139,35 @@ export const useWallet = create<Internal>()(
         feeBalance: null,
         _feeSecret: null,
 
+        // ── signer accessors ──
+        getSigner: (): Signer => {
+          const { signerKind, connectedAddress, connectedWalletId, _feeSecret } = get();
+          if (signerKind === "wallet") {
+            if (!connectedAddress) throw new Error("wallet not connected");
+            return new WalletKitSigner(connectedAddress, walletkit.canSignAuthEntry(connectedWalletId));
+          }
+          if (!_feeSecret) throw new Error("wallet not ready");
+          return new LocalSigner(Keypair.fromSecret(_feeSecret));
+        },
+
+        payerPublicKey: (): string | null => {
+          const { signerKind, connectedAddress, feeAccount } = get();
+          return signerKind === "wallet" ? connectedAddress : (feeAccount?.publicKey ?? null);
+        },
+
         createIdentity: async (seedHex?: string) => {
           await initCrypto();
           const seed = seedHex ? fromHex(seedHex) : crypto.getRandomValues(new Uint8Array(32));
           const hex = toHex(seed);
           KEYS = deriveKeys(seed);
-          const kp = chain.generateKeypair();
+          // Fee account is derived from the seed (deterministic), so importing the
+          // same seed restores the same Stellar account.
+          const kp = chain.feeKeypairFromSeed(seed);
           set({
             initialised: true,
+            signerKind: "local",
+            connectedWalletId: null,
+            connectedAddress: null,
             seedHex: hex,
             address: { pubkey: KEYS.publicKey.toString(), encPub: toHex(KEYS.encPublic) },
             feeAccount: { publicKey: kp.publicKey(), secret: kp.secret(), funded: false },
@@ -127,11 +175,47 @@ export const useWallet = create<Internal>()(
             notes: [],
             txs: [],
             balanceShielded: 0n,
+            balancesByCurrency: {},
           });
         },
 
         importIdentity: async (seedHex: string) => {
           await get().createIdentity(seedHex);
+          // The recovered fee account may already be funded on-chain; reflect that
+          // so the user is not asked to re-fund a working account.
+          await get().refreshFeeBalance().catch(() => {});
+        },
+
+        connectWallet: async () => {
+          await initCrypto();
+          const { walletId, address } = await walletkit.connect();
+          const signer = new WalletKitSigner(address, walletkit.canSignAuthEntry(walletId));
+          // Derive the shielded identity deterministically from a wallet signature
+          // (ed25519 is deterministic), so reconnecting the same wallet — even on a
+          // new device — restores the same notes. No recovery-seed UI is shown.
+          const seed = await walletSeedFromSignature(signer);
+          const hex = toHex(seed);
+          KEYS = deriveKeys(seed);
+          const funded = parseFloat(await chain.getXlmBalance(address).catch(() => "0")) > 0;
+          set({
+            initialised: true,
+            signerKind: "wallet",
+            connectedWalletId: walletId,
+            connectedAddress: address,
+            seedHex: hex,
+            address: { pubkey: KEYS.publicKey.toString(), encPub: toHex(KEYS.encPublic) },
+            // The connected wallet IS the fee-payer/settlement account. No secret
+            // is held in the browser for it.
+            feeAccount: { publicKey: address, secret: "", funded },
+            _feeSecret: null,
+            notes: [],
+            txs: [],
+            balanceShielded: 0n,
+            balancesByCurrency: {},
+          });
+          // Rediscover this identity's notes from the chain (deterministic seed →
+          // same notes on reconnect).
+          await get().scanForNotes().catch(() => {});
         },
 
         reset: () => {
@@ -139,17 +223,30 @@ export const useWallet = create<Internal>()(
           TREE = null;
           set({
             initialised: false, seedHex: null, address: null, feeAccount: null,
-            _feeSecret: null, notes: [], balanceShielded: 0n, currentRoot: null,
-            nextLeafIndex: null, txs: [], feeBalance: null,
+            signerKind: "local", connectedWalletId: null, connectedAddress: null,
+            _feeSecret: null, notes: [], balanceShielded: 0n, balancesByCurrency: {},
+            currentRoot: null, nextLeafIndex: null, txs: [], feeBalance: null,
           });
         },
 
         fundFeeAccount: async () => {
           const fa = get().feeAccount;
           if (!fa) throw new Error("no fee account");
+          const before = parseFloat(await chain.getXlmBalance(fa.publicKey).catch(() => "0"));
           await chain.friendbotFund(fa.publicKey);
           set((s) => ({ feeAccount: s.feeAccount ? { ...s.feeAccount, funded: true } : null }));
           await get().refreshFeeBalance();
+          // Record the friendbot grant in the activity feed (XLM = currency 0).
+          const after = parseFloat(await chain.getXlmBalance(fa.publicKey).catch(() => "0"));
+          const granted = after - before;
+          if (granted > 0) {
+            pushTx({
+              kind: "fund",
+              currencyId: 0,
+              amount: BigInt(Math.round(granted * 1e7)),
+              status: "success",
+            });
+          }
         },
 
         refreshFeeBalance: async () => {
@@ -212,43 +309,78 @@ export const useWallet = create<Internal>()(
                 })
               );
             }
-            set({ notes, balanceShielded: totalUnspent(notes), nextLeafIndex: T().length });
+            set({
+              notes,
+              balanceShielded: totalUnspent(notes),
+              balancesByCurrency: balancesByCurrency(notes),
+              nextLeafIndex: T().length,
+            });
             return fresh.length;
           } finally {
             set({ syncing: false });
           }
         },
 
-        deposit: async (amount: bigint) => {
+        deposit: async (currencyId: number, amount: bigint) => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           await get().syncChain();
           const keys = ensureKeys(seedHex);
-          // the depositor (whose XLM is pulled) is the fee-payer account
-          const depositor = get().feeAccount!.publicKey;
+          // the depositor (whose tokens are pulled) is the active payer account —
+          // the connected wallet, or the local fee account.
+          const depositor = get().payerPublicKey()!;
           const bundle = buildDeposit({
             root: T().root(), sk: keys.spendKey, selfPub: keys.publicKey,
-            selfEncPub: keys.encPublic, amount, settlementAddress: depositor,
+            selfEncPub: keys.encPublic, amount, currencyId, settlementAddress: depositor,
           });
-          return runFlow("deposit", amount, bundle, (res) => {
+          return runFlow("deposit", currencyId, amount, bundle, (res) => {
             // output 0 = the funded note at leafIndices[0]
-            const note: Note = { amount, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding };
+            const note: Note = { amount, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding };
             set((s) => ({
               notes: [...s.notes, { note, leafIndex: res.leafIndices[0], spent: false, createdAt: now() }],
             }));
           });
         },
 
-        selfMintDemo: async (amount: bigint) => get().deposit(amount),
+        selfMintDemo: async (currencyId: number, amount: bigint) => get().deposit(currencyId, amount),
 
-        send: async (toPubkey: string, toEncPub: string, amount: bigint) => {
+        faucetDrip: async (currencyId: number) => {
+          const { feeAccount } = get();
+          if (!feeAccount) throw new Error("wallet not ready");
+          const signer = get().getSigner();
+          const cfg = faucetFor(currencyId);
+          if (!cfg) throw new Error("no faucet for this asset");
+          const secret = faucetSecret();
+          if (!secret) throw new Error("faucet not configured (set VITE_VUSD_FAUCET_SECRET in app/.env.local)");
+          if (!feeAccount.funded) throw new Error("fund your fee account first (it pays the trustline reserve)");
+          const amount = toBaseUnits(cfg.dripAmount, currencyById(currencyId).decimals);
+          const txId = pushTx({ kind: "faucet", currencyId, amount, status: "submitting", stage: "Dripping tokens" });
+          try {
+            const hash = await chain.faucetDrip({
+              recipient: signer,
+              faucetSecret: secret,
+              assetCode: cfg.assetCode,
+              issuer: cfg.issuer,
+              amount: cfg.dripAmount,
+            });
+            updateTx(txId, { status: "success", hash, stage: undefined });
+            return hash;
+          } catch (e: any) {
+            updateTx(txId, { status: "error", error: String(e?.message ?? e), stage: undefined });
+            throw e;
+          }
+        },
+
+        send: async (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           await get().syncChain();
           const keys = ensureKeys(seedHex);
-          const input = get().notes.find((n) => !n.spent && n.note.amount >= amount && n.leafIndex != null);
+          const input = get().notes.find(
+            (n) => !n.spent && n.note.currencyId === currencyId && n.note.amount >= amount && n.leafIndex != null
+          );
           if (!input || input.leafIndex == null) { set({ busy: false }); throw new Error("no note covers that amount"); }
           // authoritative leaf index from the freshly-synced tree (the stored one
           // can be stale if other transacts landed in between).
@@ -258,16 +390,16 @@ export const useWallet = create<Internal>()(
             tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
             inputNote: input.note, inputLeafIndex: idx,
             amount, recipientPub: BigInt(toPubkey), recipientEncPub: fromHex(toEncPub),
-            // transfer: publicAmount==0, settlement unused on-chain; bind the fee account
-            settlementAddress: get().feeAccount!.publicKey,
+            // transfer: publicAmount==0, settlement unused on-chain; bind the payer
+            settlementAddress: get().payerPublicKey()!,
           });
           const change = input.note.amount - amount;
-          return runFlow("transfer", amount, bundle, (res) => {
+          return runFlow("transfer", currencyId, amount, bundle, (res) => {
             set((s) => {
               const notes = s.notes.map((n) => (n.leafIndex === input.leafIndex ? { ...n, spent: true } : n));
               if (change > 0n) {
                 notes.push({
-                  note: { amount: change, pubkey: keys.publicKey, blinding: bundle.outputs[1].note.blinding },
+                  note: { amount: change, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[1].note.blinding },
                   leafIndex: res.leafIndices[1], spent: false, createdAt: now(),
                 });
               }
@@ -276,13 +408,15 @@ export const useWallet = create<Internal>()(
           });
         },
 
-        withdraw: async (amount: bigint, toStellar: string) => {
+        withdraw: async (currencyId: number, amount: bigint, toStellar: string) => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           await get().syncChain();
           const keys = ensureKeys(seedHex);
-          const input = get().notes.find((n) => !n.spent && n.note.amount >= amount && n.leafIndex != null);
+          const input = get().notes.find(
+            (n) => !n.spent && n.note.currencyId === currencyId && n.note.amount >= amount && n.leafIndex != null
+          );
           if (!input || input.leafIndex == null) { set({ busy: false }); throw new Error("no note covers that amount"); }
           const idx = T().indexOf(commitment(input.note));
           if (idx < 0) { set({ busy: false }); throw new Error("note not found on-chain — sync/scan first"); }
@@ -292,12 +426,12 @@ export const useWallet = create<Internal>()(
             settlementAddress: toStellar, // XLM is released here
           });
           const change = input.note.amount - amount;
-          return runFlow("withdraw", amount, bundle, (res) => {
+          return runFlow("withdraw", currencyId, amount, bundle, (res) => {
             set((s) => {
               const notes = s.notes.map((n) => (n.leafIndex === input.leafIndex ? { ...n, spent: true } : n));
               if (change > 0n) {
                 notes.push({
-                  note: { amount: change, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding },
+                  note: { amount: change, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding },
                   leafIndex: res.leafIndices[0], spent: false, createdAt: now(),
                 });
               }
@@ -314,11 +448,19 @@ export const useWallet = create<Internal>()(
         initialised: s.initialised, seedHex: s.seedHex, address: s.address,
         feeAccount: s.feeAccount, _feeSecret: s._feeSecret, notes: s.notes,
         txs: s.txs, balanceShielded: s.balanceShielded,
+        balancesByCurrency: s.balancesByCurrency,
+        signerKind: s.signerKind, connectedWalletId: s.connectedWalletId,
+        connectedAddress: s.connectedAddress,
       }) as any,
       onRehydrateStorage: () => async (state) => {
         if (state?.seedHex) {
           await initCrypto();
           KEYS = deriveKeys(fromHex(state.seedHex));
+        }
+        // Re-select the previously connected external wallet so signing works
+        // after a reload (no modal; the wallet's own session governs approval).
+        if (state?.signerKind === "wallet" && state.connectedWalletId) {
+          try { walletkit.restore(state.connectedWalletId); } catch { /* wallet ext not present */ }
         }
       },
     }

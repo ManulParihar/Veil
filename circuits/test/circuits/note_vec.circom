@@ -9,6 +9,7 @@ include "keypair.circom";
 template NoteVec() {
     signal input sk;
     signal input amount;
+    signal input currencyId;
     signal input blinding;
     signal input pathIndex;
     signal output pk;
@@ -19,10 +20,11 @@ template NoteVec() {
     kp.privateKey <== sk;
     pk <== kp.publicKey;
 
-    component cmh = Poseidon(3);
+    component cmh = Poseidon(4);
     cmh.inputs[0] <== amount;
-    cmh.inputs[1] <== kp.publicKey;
-    cmh.inputs[2] <== blinding;
+    cmh.inputs[1] <== currencyId;
+    cmh.inputs[2] <== kp.publicKey;
+    cmh.inputs[3] <== blinding;
     cm <== cmh.out;
 
     component sig = Poseidon(3);

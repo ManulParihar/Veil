@@ -17,8 +17,8 @@ pub struct Proof {
     pub c: BytesN<64>,
 }
 
-/// The 7 public signals, in the FROZEN order of INTERFACES §3:
-/// `[root, publicAmount, extDataHash, nf0, nf1, cm0, cm1]`.
+/// The 8 public signals, in the FROZEN order of INTERFACES §3:
+/// `[root, publicAmount, extDataHash, nf0, nf1, cm0, cm1, currencyId]`.
 ///
 /// `#[contracttype]` structs cannot carry fixed-size `[T; 2]` array fields, so
 /// the two-element pairs are flattened to `*0`/`*1` named fields. The frozen
@@ -26,6 +26,11 @@ pub struct Proof {
 /// which yields them in exactly the order the circuit's vkey was generated
 /// against. Convenience accessors [`nullifiers`](Self::nullifiers) /
 /// [`commitments`](Self::commitments) return them as `[_; 2]`.
+///
+/// `currency_id` is the asset every note in the transaction is bound to (it is
+/// fed into all four commitments in-circuit). On the wire it is a 32-byte field
+/// element; the contract decodes it to a `u32` registry index via
+/// [`currency_id_u32`](Self::currency_id_u32).
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublicSignals {
@@ -36,6 +41,7 @@ pub struct PublicSignals {
     pub nullifier1: BytesN<32>,
     pub commitment0: BytesN<32>,
     pub commitment1: BytesN<32>,
+    pub currency_id: BytesN<32>,
 }
 
 impl PublicSignals {
@@ -47,6 +53,17 @@ impl PublicSignals {
     /// The two output commitments as a `[_; 2]`.
     pub fn commitments(&self) -> [BytesN<32>; 2] {
         [self.commitment0.clone(), self.commitment1.clone()]
+    }
+
+    /// Decode `currency_id` to a `u32` registry index. Returns `None` if the
+    /// field element does not fit in a `u32` (high 28 bytes must be zero), so a
+    /// prover cannot alias a registered token with an out-of-range field value.
+    pub fn currency_id_u32(&self) -> Option<u32> {
+        let b = self.currency_id.to_array();
+        if b[..28].iter().any(|&x| x != 0) {
+            return None;
+        }
+        Some(u32::from_be_bytes([b[28], b[29], b[30], b[31]]))
     }
 }
 

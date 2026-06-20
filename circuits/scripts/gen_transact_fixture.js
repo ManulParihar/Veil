@@ -56,10 +56,13 @@ function emptyExtDataHashDec() {
   const extHashDec = emptyExtDataHashDec();
 
   const noteVec = await wasm_tester(path.join(__dirname, "../test/circuits/note_vec.circom"), { include: INCLUDE });
-  const pos3 = await wasm_tester(path.join(__dirname, "../test/circuits/pos3.circom"), { include: INCLUDE });
+  const pos4 = await wasm_tester(path.join(__dirname, "../test/circuits/pos4.circom"), { include: INCLUDE });
+
+  const CUR = "0"; // native XLM, registered as currency 0 at init
+
   const nf = async (sk, amount, blinding, idx) =>
-    (await noteVec.calculateWitness({ sk, amount, blinding, pathIndex: idx }, true))[3].toString();
-  const cm = async (a, b, c) => (await pos3.calculateWitness({ a, b, c }, true))[1].toString();
+    (await noteVec.calculateWitness({ sk, amount, currencyId: CUR, blinding, pathIndex: idx }, true))[3].toString();
+  const cm = async (a, b, c) => (await pos4.calculateWitness({ a, b: CUR, c: b, d: c }, true))[1].toString();
 
   const zeros20 = Array(20).fill("0");
   const nf0 = await nf("11", "0", "111", "0");
@@ -73,6 +76,7 @@ function emptyExtDataHashDec() {
     extDataHash: extHashDec,
     inputNullifier: [nf0, nf1],
     outputCommitment: [cm0, cm1],
+    currencyId: CUR,
     inAmount: ["0", "0"],
     inPrivateKey: ["11", "22"],
     inBlinding: ["111", "222"],
@@ -99,8 +103,8 @@ pub const PROOF_A: [u8; 64] = ${lit(g1(proof.pi_a))};
 pub const PROOF_B: [u8; 128] = ${lit(g2(proof.pi_b))};
 pub const PROOF_C: [u8; 64] = ${lit(g1(proof.pi_c))};
 
-/// [root, publicAmount, extDataHash, nf0, nf1, cm0, cm1]
-pub const PUBLIC_SIGNALS: [[u8; 32]; 7] = [
+/// [root, publicAmount, extDataHash, nf0, nf1, cm0, cm1, currencyId]
+pub const PUBLIC_SIGNALS: [[u8; 32]; ${pub.length}] = [
 ${pub.map((x) => "    " + lit(be32(x)) + ",").join("\n")}
 ];
 `;

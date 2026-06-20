@@ -20,9 +20,10 @@ use sha2::{Digest, Sha256};
 use veil_crypto::{fr_from_be_bytes, fr_to_be_bytes, Note};
 use x25519_dalek::{EphemeralSecret, PublicKey as X25519Public, StaticSecret as X25519Secret};
 
-/// Note plaintext = amount(8, big-endian) || pubkey(32, big-endian) ||
-/// blinding(32, big-endian) = 72 bytes. Round-trips exactly.
-pub const PLAINTEXT_LEN: usize = 8 + 32 + 32;
+/// Note plaintext = amount(8, big-endian) || currencyId(4, big-endian) ||
+/// pubkey(32, big-endian) || blinding(32, big-endian) = 76 bytes. Round-trips
+/// exactly.
+pub const PLAINTEXT_LEN: usize = 8 + 4 + 32 + 32;
 
 /// The nonce is fixed at zero: every (ephemeral key, shared secret) pair is
 /// unique per encryption, so the AEAD key is never reused and a constant nonce
@@ -32,28 +33,32 @@ const ZERO_NONCE: [u8; 12] = [0u8; 12];
 /// Domain-separation prefix for deriving the AEAD key from the ECDH secret.
 const KEY_DOMAIN: &[u8] = b"veil-note-key";
 
-/// Serialize a note to its 72-byte plaintext form.
+/// Serialize a note to its 76-byte plaintext form.
 pub fn serialize_note(note: &Note) -> [u8; PLAINTEXT_LEN] {
     let mut out = [0u8; PLAINTEXT_LEN];
     out[0..8].copy_from_slice(&note.amount.to_be_bytes());
-    out[8..40].copy_from_slice(&fr_to_be_bytes(&note.pubkey));
-    out[40..72].copy_from_slice(&fr_to_be_bytes(&note.blinding));
+    out[8..12].copy_from_slice(&note.currency_id.to_be_bytes());
+    out[12..44].copy_from_slice(&fr_to_be_bytes(&note.pubkey));
+    out[44..76].copy_from_slice(&fr_to_be_bytes(&note.blinding));
     out
 }
 
-/// Parse a 72-byte plaintext back into a note.
+/// Parse a 76-byte plaintext back into a note.
 pub fn deserialize_note(bytes: &[u8]) -> Option<Note> {
     if bytes.len() != PLAINTEXT_LEN {
         return None;
     }
     let mut amt = [0u8; 8];
     amt.copy_from_slice(&bytes[0..8]);
+    let mut cur = [0u8; 4];
+    cur.copy_from_slice(&bytes[8..12]);
     let mut pk = [0u8; 32];
-    pk.copy_from_slice(&bytes[8..40]);
+    pk.copy_from_slice(&bytes[12..44]);
     let mut bl = [0u8; 32];
-    bl.copy_from_slice(&bytes[40..72]);
+    bl.copy_from_slice(&bytes[44..76]);
     Some(Note {
         amount: u64::from_be_bytes(amt),
+        currency_id: u32::from_be_bytes(cur),
         pubkey: fr_from_be_bytes(&pk),
         blinding: fr_from_be_bytes(&bl),
     })
@@ -160,7 +165,7 @@ mod tests {
     use ark_bn254::Fr;
 
     fn sample_note() -> Note {
-        Note::new(12345, Fr::from(99u64), Fr::from(7u64))
+        Note::new(12345, 3, Fr::from(99u64), Fr::from(7u64))
     }
 
     #[test]

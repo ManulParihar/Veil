@@ -87,7 +87,7 @@ mod tests {
     use ark_bn254::Fr;
 
     fn note(amount: u64) -> Note {
-        Note::new(amount, Fr::from(1u64), Fr::from(amount))
+        Note::new(amount, 0, Fr::from(1u64), Fr::from(amount))
     }
 
     #[test]
