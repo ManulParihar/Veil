@@ -134,6 +134,7 @@ export const useWallet = create<Internal>()(
         currentRoot: null,
         nextLeafIndex: null,
         txs: [],
+        txArchive: {},
         busy: false,
         syncing: false,
         feeBalance: null,
@@ -143,8 +144,8 @@ export const useWallet = create<Internal>()(
         getSigner: (): Signer => {
           const { signerKind, connectedAddress, connectedWalletId, _feeSecret } = get();
           if (signerKind === "wallet") {
-            if (!connectedAddress) throw new Error("wallet not connected");
-            return new WalletKitSigner(connectedAddress, walletkit.canSignAuthEntry(connectedWalletId));
+            if (!connectedAddress || !connectedWalletId) throw new Error("wallet not connected");
+            return new WalletKitSigner(connectedAddress, connectedWalletId, walletkit.canSignAuthEntry(connectedWalletId));
           }
           if (!_feeSecret) throw new Error("wallet not ready");
           return new LocalSigner(Keypair.fromSecret(_feeSecret));
@@ -173,7 +174,8 @@ export const useWallet = create<Internal>()(
             feeAccount: { publicKey: kp.publicKey(), secret: kp.secret(), funded: false },
             _feeSecret: kp.secret(),
             notes: [],
-            txs: [],
+            // restore this identity's archived activity (empty for a brand-new seed)
+            txs: get().txArchive[hex] ?? [],
             balanceShielded: 0n,
             balancesByCurrency: {},
           });
@@ -189,7 +191,7 @@ export const useWallet = create<Internal>()(
         connectWallet: async () => {
           await initCrypto();
           const { walletId, address } = await walletkit.connect();
-          const signer = new WalletKitSigner(address, walletkit.canSignAuthEntry(walletId));
+          const signer = new WalletKitSigner(address, walletId, walletkit.canSignAuthEntry(walletId));
           // Derive the shielded identity deterministically from a wallet signature
           // (ed25519 is deterministic), so reconnecting the same wallet — even on a
           // new device — restores the same notes. No recovery-seed UI is shown.
@@ -209,13 +211,29 @@ export const useWallet = create<Internal>()(
             feeAccount: { publicKey: address, secret: "", funded },
             _feeSecret: null,
             notes: [],
-            txs: [],
+            // restore this wallet's archived activity (deterministic seed → stable key)
+            txs: get().txArchive[hex] ?? [],
             balanceShielded: 0n,
             balancesByCurrency: {},
           });
           // Rediscover this identity's notes from the chain (deterministic seed →
           // same notes on reconnect).
           await get().scanForNotes().catch(() => {});
+        },
+
+        disconnect: () => {
+          // Snapshot the active identity's activity so reconnecting restores it.
+          const { seedHex, txs, txArchive } = get();
+          const archive = seedHex ? { ...txArchive, [seedHex]: txs } : txArchive;
+          KEYS = null;
+          TREE = null;
+          set({
+            initialised: false, seedHex: null, address: null, feeAccount: null,
+            signerKind: "local", connectedWalletId: null, connectedAddress: null,
+            _feeSecret: null, notes: [], balanceShielded: 0n, balancesByCurrency: {},
+            currentRoot: null, nextLeafIndex: null, txs: [], feeBalance: null,
+            txArchive: archive,
+          });
         },
 
         reset: () => {
@@ -226,6 +244,7 @@ export const useWallet = create<Internal>()(
             signerKind: "local", connectedWalletId: null, connectedAddress: null,
             _feeSecret: null, notes: [], balanceShielded: 0n, balancesByCurrency: {},
             currentRoot: null, nextLeafIndex: null, txs: [], feeBalance: null,
+            txArchive: {},
           });
         },
 
@@ -447,7 +466,7 @@ export const useWallet = create<Internal>()(
       partialize: (s) => ({
         initialised: s.initialised, seedHex: s.seedHex, address: s.address,
         feeAccount: s.feeAccount, _feeSecret: s._feeSecret, notes: s.notes,
-        txs: s.txs, balanceShielded: s.balanceShielded,
+        txs: s.txs, txArchive: s.txArchive, balanceShielded: s.balanceShielded,
         balancesByCurrency: s.balancesByCurrency,
         signerKind: s.signerKind, connectedWalletId: s.connectedWalletId,
         connectedAddress: s.connectedAddress,
