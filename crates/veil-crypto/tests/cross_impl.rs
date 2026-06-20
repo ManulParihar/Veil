@@ -51,11 +51,12 @@ fn poseidon_1_2_3_4_matches_circomlib() {
 }
 
 /// Pin the note pipeline end to end with fixed, simple inputs so the circuit
-/// can assert the same decimals. amount=100, sk=7, blinding=42, pathIndex=3.
+/// can assert the same decimals. amount=100, currency_id=1, sk=7, blinding=42,
+/// pathIndex=3.
 #[test]
 fn note_commitment_and_nullifier_vectors() {
     let kp = Keypair::from_private(fr_from_u64(7));
-    let note = Note::new(100, kp.public_key, fr_from_u64(42));
+    let note = Note::new(100, 1, kp.public_key, fr_from_u64(42));
     let cm = note.commitment();
     let nf = note.nullifier(kp.private_key, 3);
     println!("VEC pk={}", dec(kp.public_key));
@@ -71,12 +72,12 @@ fn note_commitment_and_nullifier_vectors() {
     // `outputCommitment` / `inputNullifier` must equal them for the same inputs.
     assert_eq!(
         dec(cm),
-        "9393485090685125340160626343171654838660902907959359341345939329381592242612",
+        "1368167316025322220717257820021635503343550471517006236415294408329041011825",
         "commitment vector drifted"
     );
     assert_eq!(
         dec(nf),
-        "15859786158883198570120416352149778089550541078065235834061119830959898607558",
+        "5670915370410439998081535105208692180002396374147198233286504856651004576590",
         "nullifier vector drifted"
     );
 }
@@ -102,7 +103,7 @@ fn matches_light_poseidon_reference() {
 /// Determinism: same inputs → same outputs, every run, every platform.
 #[test]
 fn derivations_are_deterministic() {
-    let a = Note::new(5, fr_from_u64(11), fr_from_u64(99)).commitment();
-    let b = Note::new(5, fr_from_u64(11), fr_from_u64(99)).commitment();
+    let a = Note::new(5, 2, fr_from_u64(11), fr_from_u64(99)).commitment();
+    let b = Note::new(5, 2, fr_from_u64(11), fr_from_u64(99)).commitment();
     assert_eq!(a, b);
 }

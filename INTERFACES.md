@@ -17,19 +17,24 @@ Locked facts (verified in `crates/veil-crypto/tests/cross_impl.rs`):
   circom `Poseidon(n)`.
 - `Poseidon([1,2]) = 7853200120776062878684798364095072458815029376092732009249414926327459813530`
 - `Poseidon([1,2,3]) = 6542985608222806190361240322586112750744169038454362455181422643027100751666`
+- `Poseidon([1,2,3,4]) = 18821383157269793795438455681495246036402687001665670618754263018637548127333` (width 4, t=5; the multi-currency commitment arity)
 
 ### Note formulas (circuit must reproduce these in-constraint)
 ```
-pk         = Poseidon(sk)                        // width 1
-commitment = Poseidon(amount, pk, blinding)      // width 3
-signature  = Poseidon(sk, commitment, pathIndex) // width 3
-nullifier  = Poseidon(commitment, pathIndex, signature) // width 3
+pk         = Poseidon(sk)                                   // width 1
+commitment = Poseidon(amount, currency_id, pk, blinding)    // width 4
+signature  = Poseidon(sk, commitment, pathIndex)            // width 3
+nullifier  = Poseidon(commitment, pathIndex, signature)     // width 3
 ```
-Pinned test vector (sk=7, amount=100, blinding=42, pathIndex=3):
+`currency_id` is a u32 registry index, encoded on the wire as a 32-byte
+big-endian field element (low 4 bytes significant). Binding it into the
+commitment makes a note spendable only as that asset.
+
+Pinned test vector (sk=7, amount=100, currency_id=1, blinding=42, pathIndex=3):
 ```
 pk = 7061949393491957813657776856458368574501817871421526214197139795307327923534
-cm = 9393485090685125340160626343171654838660902907959359341345939329381592242612
-nf = 15859786158883198570120416352149778089550541078065235834061119830959898607558
+cm = 1368167316025322220717257820021635503343550471517006236415294408329041011825
+nf = 5670915370410439998081535105208692180002396374147198233286504856651004576590
 ```
 Empty Merkle leaf `Zero(0) = Poseidon(0)` (width 1). `Zero(i+1) = Poseidon(Zero(i), Zero(i))`.
 

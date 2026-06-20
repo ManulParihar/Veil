@@ -163,9 +163,9 @@ Design (decided):
 
 | # | Plane / task | Status | Notes |
 |---|---|---|---|
-| M0 | Seed this tracker section | 🟡 | this entry |
-| M1 | **GATE**: crypto Poseidon t=5 + PARAMS_T5 + hash4 + width-4 cross-impl vector | ⏳ | poseidon.rs state [Fr;5]; constants from light-poseidon 0.4; `cargo test -p veil-crypto` green before anything else |
-| M2 | crypto: currency_id in Note, commitment -> hash4, re-pin vectors | ⏳ | INTERFACES §0 + cross_impl.rs |
+| M0 | Seed this tracker section | ✅ | done |
+| M1 | **GATE**: crypto Poseidon t=5 + PARAMS_T5 + hash4 + width-4 cross-impl vector | ✅ | poseidon.rs state [Fr;5]; PARAMS_T5 from light-poseidon 0.4 via committed gen example; Poseidon(1,2,3,4)=18821383…; 6/6 tests, wasm32 no_std builds, clippy clean |
+| M2 | crypto: currency_id in Note, commitment -> hash4, re-pin vectors | ✅ | commitment=Poseidon(amount,currency_id,pk,blinding); pinned (cur=1): cm=1368167…, nf=5670915…; INTERFACES §0 updated |
 | M3 | app crypto.ts mirror (hash4 + 76-byte plaintext), assert same vector | ⏳ | three-way gate, JS side |
 | M4 | circuit: Poseidon(4) commitments + currencyId [7], regen r1cs, fixture cross-check | ⏳ | three-way gate closed at width 4 |
 | M5 | regenerate zkey/vkey -> vk.rs (NUM_PUBLIC=8, 9 IC points) | ⏳ | confirm export not hardcoded to 7 |
