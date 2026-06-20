@@ -37,7 +37,8 @@ function proofScVal(p: ProofBytes): xdr.ScVal {
   return structV({ a: bytesV(p.a), b: bytesV(p.b), c: bytesV(p.c) });
 }
 function signalsScVal(s: Uint8Array[]): xdr.ScVal {
-  // s in INTERFACES §3 order: [root, publicAmount, extDataHash, nf0, nf1, cm0, cm1]
+  // s in INTERFACES §3 order:
+  // [root, publicAmount, extDataHash, nf0, nf1, cm0, cm1, currencyId]
   return structV({
     root: bytesV(s[0]),
     public_amount: bytesV(s[1]),
@@ -46,6 +47,7 @@ function signalsScVal(s: Uint8Array[]): xdr.ScVal {
     nullifier1: bytesV(s[4]),
     commitment0: bytesV(s[5]),
     commitment1: bytesV(s[6]),
+    currency_id: bytesV(s[7]),
   });
 }
 function extScVal(e: ExtDataWire): xdr.ScVal {

@@ -90,7 +90,9 @@ export interface WalletState {
 
   // data
   notes: StoredNote[];
-  balanceShielded: bigint; // sum of unspent note amounts
+  balanceShielded: bigint; // sum of unspent note amounts (all currencies, base units)
+  /** Per-currency unspent balance, keyed by currency_id. */
+  balancesByCurrency: Record<number, bigint>;
   currentRoot: string | null; // hex, from chain
   nextLeafIndex: number | null;
   txs: TxRecord[];
@@ -113,10 +115,11 @@ export interface WalletState {
   syncChain: () => Promise<void>; // read current root / next index
   scanForNotes: () => Promise<number>; // trial-decrypt events; returns # found
 
-  // actions (each pushes a TxRecord and drives it through proving→submit)
-  send: (toPubkey: string, toEncPub: string, amount: bigint) => Promise<TransactResult>;
-  deposit: (amount: bigint) => Promise<TransactResult>;
-  withdraw: (amount: bigint, toStellar: string) => Promise<TransactResult>;
+  // actions (each pushes a TxRecord and drives it through proving→submit).
+  // `currencyId` selects the asset; amounts are in that currency's base units.
+  send: (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => Promise<TransactResult>;
+  deposit: (currencyId: number, amount: bigint) => Promise<TransactResult>;
+  withdraw: (currencyId: number, amount: bigint, toStellar: string) => Promise<TransactResult>;
   /** demo helper: create a self-note via a real on-chain transact (Phase-1 mechanics) */
-  selfMintDemo: (amount: bigint) => Promise<TransactResult>;
+  selfMintDemo: (currencyId: number, amount: bigint) => Promise<TransactResult>;
 }

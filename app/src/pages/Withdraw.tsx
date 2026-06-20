@@ -1,32 +1,36 @@
 import { useState } from "react";
 import { useWallet } from "../store/wallet";
 import { AmountInput, Spinner, useToast } from "../components/ui";
+import CurrencySelect from "../components/CurrencySelect";
 import TxProgress from "../components/TxProgress";
-import { toStroops, fromStroops } from "../lib/types";
+import { currencyById, toBaseUnits, fromBaseUnits, DEFAULT_CURRENCY_ID } from "../lib/currencies";
 
 // A Stellar account address: G... (56 chars, base32).
 const isStellarAddr = (s: string) => /^G[A-Z2-7]{55}$/.test(s.trim());
 
 export default function Withdraw() {
-  const { withdraw, txs, balanceShielded, feeAccount } = useWallet();
+  const { withdraw, txs, balancesByCurrency, feeAccount } = useWallet();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
+  const [currencyId, setCurrencyId] = useState(DEFAULT_CURRENCY_ID);
   const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const currency = currencyById(currencyId);
+  const balance = balancesByCurrency[currencyId] ?? 0n;
   const tx = started ? txs.find((t) => t.kind === "withdraw") : undefined;
 
   const submit = async () => {
     const dest = to.trim();
     if (!isStellarAddr(dest)) { toast.push("Enter a valid Stellar address (G…)", "err"); return; }
-    const a = toStroops(amount);
+    const a = toBaseUnits(amount, currency.decimals);
     if (a <= 0n) { toast.push("Enter an amount", "err"); return; }
-    if (a > balanceShielded) { toast.push("Amount exceeds shielded balance", "err"); return; }
+    if (a > balance) { toast.push("Amount exceeds shielded balance", "err"); return; }
     setBusy(true);
     setStarted(true);
     try {
-      await withdraw(a, dest);
-      toast.push(`Withdrew ${amount} XLM`, "ok");
+      await withdraw(currencyId, a, dest);
+      toast.push(`Withdrew ${amount} ${currency.symbol}`, "ok");
       setAmount("");
     } catch (e: any) {
       toast.push(e.message ?? "withdraw failed", "err");
@@ -42,6 +46,10 @@ export default function Withdraw() {
 
       <div className="card p-6 space-y-4">
         <div>
+          <div className="label">Asset</div>
+          <CurrencySelect value={currencyId} onChange={setCurrencyId} testid="withdraw-currency" />
+        </div>
+        <div>
           <div className="label">Destination Stellar address</div>
           <input data-testid="withdraw-to" className="input mono text-sm" placeholder="G…" value={to} onChange={(e) => setTo(e.target.value)} />
           {feeAccount && (
@@ -52,7 +60,7 @@ export default function Withdraw() {
         </div>
         <div>
           <div className="label">Amount</div>
-          <AmountInput value={amount} onChange={setAmount} max={fromStroops(balanceShielded)} testid="withdraw-amount" />
+          <AmountInput value={amount} onChange={setAmount} max={fromBaseUnits(balance, currency.decimals)} testid="withdraw-amount" />
         </div>
         <button data-testid="withdraw-submit" onClick={submit} disabled={busy} className="btn-primary w-full py-3">
           {busy ? <><Spinner /> Proving…</> : "Withdraw to Stellar"}

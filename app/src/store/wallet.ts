@@ -41,6 +41,17 @@ function totalUnspent(notes: StoredNote[]): bigint {
   return notes.filter((n) => !n.spent).reduce((s, n) => s + n.note.amount, 0n);
 }
 
+/** Per-currency unspent totals, keyed by currency_id. */
+function balancesByCurrency(notes: StoredNote[]): Record<number, bigint> {
+  const out: Record<number, bigint> = {};
+  for (const n of notes) {
+    if (n.spent) continue;
+    const c = n.note.currencyId;
+    out[c] = (out[c] ?? 0n) + n.note.amount;
+  }
+  return out;
+}
+
 interface Internal extends WalletState {
   _feeSecret: string | null;
 }
@@ -88,7 +99,12 @@ export const useWallet = create<Internal>()(
           );
           onSuccess(res);
           updateTx(txId, { status: "success", hash: res.hash, stage: undefined });
-          set((s) => ({ balanceShielded: totalUnspent(s.notes), currentRoot: res.newRoot, busy: false }));
+          set((s) => ({
+            balanceShielded: totalUnspent(s.notes),
+            balancesByCurrency: balancesByCurrency(s.notes),
+            currentRoot: res.newRoot,
+            busy: false,
+          }));
           return { hash: res.hash, newRoot: res.newRoot, leafIndices: res.leafIndices };
         } catch (e: any) {
           updateTx(txId, { status: "error", error: String(e?.message ?? e), stage: undefined });
@@ -104,6 +120,7 @@ export const useWallet = create<Internal>()(
         feeAccount: null,
         notes: [],
         balanceShielded: 0n,
+        balancesByCurrency: {},
         currentRoot: null,
         nextLeafIndex: null,
         txs: [],
@@ -139,8 +156,8 @@ export const useWallet = create<Internal>()(
           TREE = null;
           set({
             initialised: false, seedHex: null, address: null, feeAccount: null,
-            _feeSecret: null, notes: [], balanceShielded: 0n, currentRoot: null,
-            nextLeafIndex: null, txs: [], feeBalance: null,
+            _feeSecret: null, notes: [], balanceShielded: 0n, balancesByCurrency: {},
+            currentRoot: null, nextLeafIndex: null, txs: [], feeBalance: null,
           });
         },
 
@@ -212,43 +229,50 @@ export const useWallet = create<Internal>()(
                 })
               );
             }
-            set({ notes, balanceShielded: totalUnspent(notes), nextLeafIndex: T().length });
+            set({
+              notes,
+              balanceShielded: totalUnspent(notes),
+              balancesByCurrency: balancesByCurrency(notes),
+              nextLeafIndex: T().length,
+            });
             return fresh.length;
           } finally {
             set({ syncing: false });
           }
         },
 
-        deposit: async (amount: bigint) => {
+        deposit: async (currencyId: number, amount: bigint) => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           await get().syncChain();
           const keys = ensureKeys(seedHex);
-          // the depositor (whose XLM is pulled) is the fee-payer account
+          // the depositor (whose tokens are pulled) is the fee-payer account
           const depositor = get().feeAccount!.publicKey;
           const bundle = buildDeposit({
             root: T().root(), sk: keys.spendKey, selfPub: keys.publicKey,
-            selfEncPub: keys.encPublic, amount, settlementAddress: depositor,
+            selfEncPub: keys.encPublic, amount, currencyId, settlementAddress: depositor,
           });
           return runFlow("deposit", amount, bundle, (res) => {
             // output 0 = the funded note at leafIndices[0]
-            const note: Note = { amount, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding };
+            const note: Note = { amount, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding };
             set((s) => ({
               notes: [...s.notes, { note, leafIndex: res.leafIndices[0], spent: false, createdAt: now() }],
             }));
           });
         },
 
-        selfMintDemo: async (amount: bigint) => get().deposit(amount),
+        selfMintDemo: async (currencyId: number, amount: bigint) => get().deposit(currencyId, amount),
 
-        send: async (toPubkey: string, toEncPub: string, amount: bigint) => {
+        send: async (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           await get().syncChain();
           const keys = ensureKeys(seedHex);
-          const input = get().notes.find((n) => !n.spent && n.note.amount >= amount && n.leafIndex != null);
+          const input = get().notes.find(
+            (n) => !n.spent && n.note.currencyId === currencyId && n.note.amount >= amount && n.leafIndex != null
+          );
           if (!input || input.leafIndex == null) { set({ busy: false }); throw new Error("no note covers that amount"); }
           // authoritative leaf index from the freshly-synced tree (the stored one
           // can be stale if other transacts landed in between).
@@ -267,7 +291,7 @@ export const useWallet = create<Internal>()(
               const notes = s.notes.map((n) => (n.leafIndex === input.leafIndex ? { ...n, spent: true } : n));
               if (change > 0n) {
                 notes.push({
-                  note: { amount: change, pubkey: keys.publicKey, blinding: bundle.outputs[1].note.blinding },
+                  note: { amount: change, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[1].note.blinding },
                   leafIndex: res.leafIndices[1], spent: false, createdAt: now(),
                 });
               }
@@ -276,13 +300,15 @@ export const useWallet = create<Internal>()(
           });
         },
 
-        withdraw: async (amount: bigint, toStellar: string) => {
+        withdraw: async (currencyId: number, amount: bigint, toStellar: string) => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           await get().syncChain();
           const keys = ensureKeys(seedHex);
-          const input = get().notes.find((n) => !n.spent && n.note.amount >= amount && n.leafIndex != null);
+          const input = get().notes.find(
+            (n) => !n.spent && n.note.currencyId === currencyId && n.note.amount >= amount && n.leafIndex != null
+          );
           if (!input || input.leafIndex == null) { set({ busy: false }); throw new Error("no note covers that amount"); }
           const idx = T().indexOf(commitment(input.note));
           if (idx < 0) { set({ busy: false }); throw new Error("note not found on-chain — sync/scan first"); }
@@ -297,7 +323,7 @@ export const useWallet = create<Internal>()(
               const notes = s.notes.map((n) => (n.leafIndex === input.leafIndex ? { ...n, spent: true } : n));
               if (change > 0n) {
                 notes.push({
-                  note: { amount: change, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding },
+                  note: { amount: change, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding },
                   leafIndex: res.leafIndices[0], spent: false, createdAt: now(),
                 });
               }
@@ -314,6 +340,7 @@ export const useWallet = create<Internal>()(
         initialised: s.initialised, seedHex: s.seedHex, address: s.address,
         feeAccount: s.feeAccount, _feeSecret: s._feeSecret, notes: s.notes,
         txs: s.txs, balanceShielded: s.balanceShielded,
+        balancesByCurrency: s.balancesByCurrency,
       }) as any,
       onRehydrateStorage: () => async (state) => {
         if (state?.seedHex) {

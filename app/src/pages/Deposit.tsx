@@ -1,27 +1,30 @@
 import { useState } from "react";
 import { useWallet } from "../store/wallet";
 import { AmountInput, Spinner, useToast } from "../components/ui";
+import CurrencySelect from "../components/CurrencySelect";
 import TxProgress from "../components/TxProgress";
-import { toStroops } from "../lib/types";
+import { currencyById, toBaseUnits, DEFAULT_CURRENCY_ID } from "../lib/currencies";
 
 export default function Deposit() {
   const { deposit, txs, feeAccount } = useWallet();
   const [amount, setAmount] = useState("");
+  const [currencyId, setCurrencyId] = useState(DEFAULT_CURRENCY_ID);
   const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const currency = currencyById(currencyId);
   // txs is newest-first; the latest deposit is the active one once we've started.
   const tx = started ? txs.find((t) => t.kind === "deposit") : undefined;
 
   const submit = async () => {
-    const a = toStroops(amount);
+    const a = toBaseUnits(amount, currency.decimals);
     if (a <= 0n) { toast.push("Enter an amount", "err"); return; }
     if (!feeAccount?.funded) { toast.push("Fund your fee account first", "err"); return; }
     setBusy(true);
     setStarted(true);
     try {
-      await deposit(a);
-      toast.push(`Deposited ${amount} XLM`, "ok");
+      await deposit(currencyId, a);
+      toast.push(`Deposited ${amount} ${currency.symbol}`, "ok");
       setAmount("");
     } catch (e: any) {
       toast.push(e.message ?? "deposit failed", "err");
@@ -38,6 +41,10 @@ export default function Deposit() {
       </div>
 
       <div className="card p-6 space-y-4">
+        <div>
+          <div className="label">Asset</div>
+          <CurrencySelect value={currencyId} onChange={setCurrencyId} testid="deposit-currency" />
+        </div>
         <div>
           <div className="label">Amount</div>
           <AmountInput value={amount} onChange={setAmount} testid="deposit-amount" />

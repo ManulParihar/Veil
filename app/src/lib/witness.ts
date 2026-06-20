@@ -10,7 +10,7 @@ import { TREE_LEVELS } from "./types";
 export interface WitnessBundle {
   /** circom input (decimal strings) */
   input: Record<string, unknown>;
-  /** the 7 public signals in INTERFACES §3 order (decimal strings) */
+  /** the 8 public signals in INTERFACES §3 order (decimal strings) */
   publicSignals: string[];
   extData: ExtData;
   /** the output notes we now own (recipient, change) with their pubkeys */
@@ -35,10 +35,13 @@ interface OutputSpec {
   encPub: Uint8Array; // recipient x25519 pub, to encrypt the note to
 }
 
-/** Assemble the full witness from two inputs + two outputs + publicAmount + root. */
+/** Assemble the full witness from two inputs + two outputs + publicAmount + root.
+ *  A single transaction is bound to one `currencyId`, fed into every commitment
+ *  so all four notes share the same asset. */
 function assemble(
   root: bigint,
   publicAmount: bigint,
+  currencyId: number,
   ins: [InputSpec, InputSpec],
   outs: [OutputSpec, OutputSpec],
   relayer: Uint8Array,
@@ -48,7 +51,7 @@ function assemble(
 ): WitnessBundle {
   // encrypt outputs to their owners
   const encrypted = outs.map((o) => {
-    const note: Note = { amount: o.amount, pubkey: o.pubkey, blinding: o.blinding };
+    const note: Note = { amount: o.amount, currencyId, pubkey: o.pubkey, blinding: o.blinding };
     const enc = encryptNote(o.encPub, note);
     return { note, enc, wire: encWire(enc) };
   });
@@ -64,11 +67,11 @@ function assemble(
   const extHash = computeExtDataHash(extData);
 
   const inNullifiers = ins.map((i) => {
-    const note: Note = { amount: i.amount, pubkey: hash1(i.sk), blinding: i.blinding };
+    const note: Note = { amount: i.amount, currencyId, pubkey: hash1(i.sk), blinding: i.blinding };
     return nullifier(note, i.sk, BigInt(i.pathIndex));
   });
   const outCommitments = outs.map((o) =>
-    commitment({ amount: o.amount, pubkey: o.pubkey, blinding: o.blinding })
+    commitment({ amount: o.amount, currencyId, pubkey: o.pubkey, blinding: o.blinding })
   );
 
   const input: Record<string, unknown> = {
@@ -77,6 +80,7 @@ function assemble(
     extDataHash: S(extHash),
     inputNullifier: inNullifiers.map(S),
     outputCommitment: outCommitments.map(S),
+    currencyId: currencyId.toString(),
     inAmount: ins.map((i) => S(i.amount)),
     inPrivateKey: ins.map((i) => S(i.sk)),
     inBlinding: ins.map((i) => S(i.blinding)),
@@ -91,6 +95,7 @@ function assemble(
     S(root), S(publicAmount), S(extHash),
     S(inNullifiers[0]), S(inNullifiers[1]),
     S(outCommitments[0]), S(outCommitments[1]),
+    currencyId.toString(),
   ];
 
   return {
@@ -120,11 +125,11 @@ function dummyInput(sk: bigint, pathIndex: number): InputSpec {
  *  publicAmount = +amount, dummy inputs. */
 export function buildDeposit(params: {
   root: bigint; sk: bigint; selfPub: bigint; selfEncPub: Uint8Array; amount: bigint;
-  settlementAddress: string;
+  currencyId: number; settlementAddress: string;
 }): WitnessBundle {
-  const { root, sk, selfPub, selfEncPub, amount, settlementAddress } = params;
+  const { root, sk, selfPub, selfEncPub, amount, currencyId, settlementAddress } = params;
   return assemble(
-    root, amount,
+    root, amount, currencyId,
     [dummyInput(sk, 0), dummyInput(sk, 1)],
     [
       { amount, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
@@ -152,8 +157,9 @@ export function buildTransfer(params: {
     pathIndex: path.pathIndex, pathElements: path.pathElements,
   };
   const dummy = dummyInput(sk, (path.pathIndex ^ 1) >>> 0 === path.pathIndex ? path.pathIndex + 2 : path.pathIndex + 1);
+  // The transfer inherits the spent note's currency (one asset per tx).
   return assemble(
-    tree.root(), 0n,
+    tree.root(), 0n, inputNote.currencyId,
     [real, dummy],
     [
       { amount, pubkey: recipientPub, blinding: rand(), encPub: recipientEncPub },
@@ -181,7 +187,7 @@ export function buildWithdraw(params: {
   };
   const dummy = dummyInput(sk, path.pathIndex + 1);
   return assemble(
-    tree.root(), (R - amount) % R,
+    tree.root(), (R - amount) % R, inputNote.currencyId,
     [real, dummy],
     [
       { amount: change, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
