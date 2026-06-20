@@ -32,12 +32,14 @@ fn wallet_witness_proves_and_verifies() {
     // ── build a real transfer witness ──
     let mut sender = Wallet::from_seed([40u8; 32]);
     let recipient = Keys::from_seed([41u8; 32]);
-    let note = Note::new(100, sender.keys.public_key(), Fr::from(11u64));
+    let cur = 1u32;
+    let note = Note::new(100, cur, sender.keys.public_key(), Fr::from(11u64));
     let idx = sender.tree.insert(note.commitment());
     sender.store.add(note, idx);
 
     let prepared = sender
         .build_transfer(
+            cur,
             70,
             recipient.public_key(),
             &recipient.enc_public_bytes(),
@@ -74,8 +76,9 @@ fn wallet_witness_proves_and_verifies() {
         .expect("run snarkjs verify");
     assert!(status.success(), "SDK-built witness produced a NON-verifying proof");
 
-    // sanity: 7 public signals, value-conserving (public_amount == 0 for transfer)
+    // sanity: 8 public signals, value-conserving (public_amount == 0 for transfer)
     let public: Vec<String> = serde_json::from_str(&out.public_json).unwrap();
-    assert_eq!(public.len(), 7, "expected 7 public signals");
+    assert_eq!(public.len(), 8, "expected 8 public signals");
     assert_eq!(public[1], "0", "publicAmount must be 0 for a private transfer");
+    assert_eq!(public[7], cur.to_string(), "currencyId is public signal [7]");
 }

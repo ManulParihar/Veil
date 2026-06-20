@@ -98,8 +98,13 @@ impl WitnessInput {
     /// still need to yield a self-consistent commitment → nullifier so the
     /// circuit's nullifier constraint holds, and the two input nullifiers stay
     /// distinct from the real one.
-    pub fn dummy(private_key: Fr, blinding: Fr, path_index: u32) -> Self {
-        let note = Note::new(0, veil_crypto::Keypair::from_private(private_key).public_key, blinding);
+    pub fn dummy(currency_id: u32, private_key: Fr, blinding: Fr, path_index: u32) -> Self {
+        let note = Note::new(
+            0,
+            currency_id,
+            veil_crypto::Keypair::from_private(private_key).public_key,
+            blinding,
+        );
         let nullifier = note.nullifier(private_key, path_index as u64);
         WitnessInput {
             amount: 0,
@@ -123,8 +128,8 @@ pub struct WitnessOutput {
 }
 
 impl WitnessOutput {
-    pub fn new(amount: u64, pubkey: Fr, blinding: Fr) -> Self {
-        let commitment = Note::new(amount, pubkey, blinding).commitment();
+    pub fn new(currency_id: u32, amount: u64, pubkey: Fr, blinding: Fr) -> Self {
+        let commitment = Note::new(amount, currency_id, pubkey, blinding).commitment();
         WitnessOutput {
             amount,
             pubkey,
@@ -134,11 +139,15 @@ impl WitnessOutput {
     }
 }
 
-/// All the data needed to build the circuit witness for one transact.
+/// All the data needed to build the circuit witness for one transact. A single
+/// transaction operates on one `currency_id`: it is fed into every commitment in
+/// the circuit, so all four notes must share the same asset.
 pub struct TransactWitness {
     pub root: Fr,
     pub public_amount: Fr,
     pub ext_data_hash: Fr,
+    /// The asset every note in this transaction is bound to (public signal [7]).
+    pub currency_id: u32,
     pub inputs: [WitnessInput; 2],
     pub outputs: [WitnessOutput; 2],
 }
@@ -159,6 +168,8 @@ pub struct WitnessJson {
     pub input_nullifier: [String; 2],
     #[serde(rename = "outputCommitment")]
     pub output_commitment: [String; 2],
+    #[serde(rename = "currencyId")]
+    pub currency_id: String,
     #[serde(rename = "inAmount")]
     pub in_amount: [String; 2],
     #[serde(rename = "inPrivateKey")]
@@ -196,6 +207,7 @@ impl TransactWitness {
                 fr_to_decimal(&self.outputs[0].commitment),
                 fr_to_decimal(&self.outputs[1].commitment),
             ],
+            currency_id: u64_dec(self.currency_id as u64),
             in_amount: [u64_dec(self.inputs[0].amount), u64_dec(self.inputs[1].amount)],
             in_private_key: [
                 fr_to_decimal(&self.inputs[0].private_key),
@@ -227,8 +239,8 @@ impl TransactWitness {
         serde_json::to_string_pretty(&self.to_json()).expect("witness JSON serialization")
     }
 
-    /// The 7 public signals in INTERFACES §3 order, as decimal strings.
-    pub fn public_signals(&self) -> [String; 7] {
+    /// The 8 public signals in INTERFACES §3 order, as decimal strings.
+    pub fn public_signals(&self) -> [String; 8] {
         [
             fr_to_decimal(&self.root),
             fr_to_decimal(&self.public_amount),
@@ -237,6 +249,7 @@ impl TransactWitness {
             fr_to_decimal(&self.inputs[1].nullifier),
             fr_to_decimal(&self.outputs[0].commitment),
             fr_to_decimal(&self.outputs[1].commitment),
+            u64_dec(self.currency_id as u64),
         ]
     }
 }
@@ -298,8 +311,9 @@ mod tests {
         let recipient = Keys::from_seed([31u8; 32]);
         let sk = sender.spend_key();
 
+        let cur = 1u32;
         // Real input note at leaf 0 with a fabricated path.
-        let real = Note::new(100, sender.public_key(), Fr::from(11u64));
+        let real = Note::new(100, cur, sender.public_key(), Fr::from(11u64));
         let real_nf = real.nullifier(sk, 0);
         let real_input = WitnessInput {
             amount: 100,
@@ -310,12 +324,12 @@ mod tests {
             nullifier: real_nf,
         };
         // Dummy second input with a distinct nullifier.
-        let dummy = WitnessInput::dummy(sk, Fr::from(999u64), 1);
+        let dummy = WitnessInput::dummy(cur, sk, Fr::from(999u64), 1);
         assert_ne!(real_input.nullifier, dummy.nullifier, "input nullifiers must differ");
 
         // Outputs: 100 to recipient, 0 change → conserves value.
-        let out0 = WitnessOutput::new(100, recipient.public_key(), Fr::from(77u64));
-        let out1 = WitnessOutput::new(0, sender.public_key(), Fr::from(88u64));
+        let out0 = WitnessOutput::new(cur, 100, recipient.public_key(), Fr::from(77u64));
+        let out1 = WitnessOutput::new(cur, 0, sender.public_key(), Fr::from(88u64));
         assert_eq!(
             real_input.amount + dummy.amount,
             out0.amount + out1.amount,
@@ -327,6 +341,7 @@ mod tests {
             root: Fr::from(424242u64),
             public_amount: Fr::from(0u64),
             ext_data_hash: ed.ext_data_hash(),
+            currency_id: cur,
             inputs: [real_input, dummy],
             outputs: [out0, out1],
         };
@@ -344,15 +359,16 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
         for field in [
             "root", "publicAmount", "extDataHash", "inputNullifier",
-            "outputCommitment", "inAmount", "inPrivateKey", "inBlinding",
+            "outputCommitment", "currencyId", "inAmount", "inPrivateKey", "inBlinding",
             "inPathIndices", "inPathElements", "outAmount", "outPubkey", "outBlinding",
         ] {
             assert!(v.get(field).is_some(), "witness JSON missing field {field}");
         }
 
-        // Public signals: 7, with extDataHash matching ExtData.
+        // Public signals: 8, with extDataHash matching ExtData and currency at [7].
         let ps = w.public_signals();
-        assert_eq!(ps.len(), 7);
+        assert_eq!(ps.len(), 8);
         assert_eq!(ps[2], ed.ext_data_hash_decimal());
+        assert_eq!(ps[7], "1");
     }
 }
