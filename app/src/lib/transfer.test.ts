@@ -8,8 +8,9 @@ import { dirname, join } from "node:path";
 import * as snarkjs from "snarkjs";
 import { initCrypto, deriveKeys, fieldToBytes, commitment, type Note } from "./crypto";
 import { ClientMerkleTree } from "./merkleTree";
-import { buildDeposit, buildTransfer } from "./witness";
+import { buildDeposit, buildTransfer, buildWithdraw } from "./witness";
 import { DEFAULT_CURRENCY_ID } from "./currencies";
+import { scanEvents } from "./scan";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CIRCUIT = join(here, "../../public/circuit");
@@ -46,7 +47,7 @@ describe("transfer spends a self-deposited note", () => {
     const recipient = deriveKeys(fieldToBytes(7777n));
     const xfer = buildTransfer({
       tree, sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
-      inputNote: depositNote, inputLeafIndex: idx,
+      inputs: [{ note: depositNote, leafIndex: idx }],
       amount: 400n, recipientPub: recipient.publicKey, recipientEncPub: recipient.encPublic,
       settlementAddress: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
     });
@@ -78,11 +79,81 @@ describe("transfer spends a self-deposited note", () => {
     const recipient = deriveKeys(fieldToBytes(7777n));
     const xfer = buildTransfer({
       tree, sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
-      inputNote: note, inputLeafIndex: idx,
+      inputs: [{ note, leafIndex: idx }],
       amount: 400n, recipientPub: recipient.publicKey, recipientEncPub: recipient.encPublic,
       settlementAddress: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
     });
     const { proof, publicSignals } = await snarkjs.groth16.fullProve(xfer.input, WASM, ZKEY);
+    const vkey = JSON.parse(readFileSync(join(CIRCUIT, "verification_key.json"), "utf8"));
+    expect(await snarkjs.groth16.verify(vkey, publicSignals, proof)).toBe(true);
+  }, 60000);
+
+  it("combines two notes when no single note covers the transfer", async () => {
+    const keys = deriveKeys(fieldToBytes(424242n));
+    const cid = DEFAULT_CURRENCY_ID;
+    const tree = new ClientMerkleTree();
+    const noteA: Note = { amount: 9n, currencyId: cid, pubkey: keys.publicKey, blinding: 91n };
+    const noteB: Note = { amount: 5n, currencyId: cid, pubkey: keys.publicKey, blinding: 52n };
+    const idxA = tree.insert(commitment(noteA));
+    const idxB = tree.insert(commitment(noteB));
+
+    const recipient = deriveKeys(fieldToBytes(7777n));
+    const xfer = buildTransfer({
+      tree, sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
+      inputs: [
+        { note: noteA, leafIndex: idxA },
+        { note: noteB, leafIndex: idxB },
+      ],
+      amount: 10n, recipientPub: recipient.publicKey, recipientEncPub: recipient.encPublic,
+      settlementAddress: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
+    });
+
+    expect(xfer.outputs[0].note.amount).toBe(10n);
+    expect(xfer.outputs[1].note.amount).toBe(4n);
+
+    const { proof, publicSignals } = await snarkjs.groth16.fullProve(xfer.input, WASM, ZKEY);
+    const vkey = JSON.parse(readFileSync(join(CIRCUIT, "verification_key.json"), "utf8"));
+    expect(await snarkjs.groth16.verify(vkey, publicSignals, proof)).toBe(true);
+  }, 60000);
+
+  it("lets the recipient spend a received 5 XLM note exactly", async () => {
+    const sender = deriveKeys(fieldToBytes(424242n));
+    const recipient = deriveKeys(fieldToBytes(7777n));
+    const cid = DEFAULT_CURRENCY_ID;
+    const tree = new ClientMerkleTree();
+    const note: Note = { amount: 5n, currencyId: cid, pubkey: sender.publicKey, blinding: 55n };
+    const inputIndex = tree.insert(commitment(note));
+    tree.insert(123n);
+
+    const xfer = buildTransfer({
+      tree, sk: sender.spendKey, selfPub: sender.publicKey, selfEncPub: sender.encPublic,
+      inputs: [{ note, leafIndex: inputIndex }],
+      amount: 5n, recipientPub: recipient.publicKey, recipientEncPub: recipient.encPublic,
+      settlementAddress: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
+    });
+    const receivedIndex = tree.insert(commitment(xfer.outputs[0].note));
+    tree.insert(commitment(xfer.outputs[1].note));
+
+    const found = scanEvents(recipient, [{
+      commitment: fieldToBytes(commitment(xfer.outputs[0].note)),
+      leafIndex: receivedIndex,
+      ciphertext: xfer.extData.ciphertexts[0],
+      viewTag: xfer.extData.viewTags[0],
+      ledger: 1,
+    }]);
+    expect(found).toHaveLength(1);
+    expect(found[0].note.amount).toBe(5n);
+    expect(found[0].note.pubkey).toBe(recipient.publicKey);
+
+    const withdraw = buildWithdraw({
+      tree, sk: recipient.spendKey, selfPub: recipient.publicKey, selfEncPub: recipient.encPublic,
+      inputs: [{ note: found[0].note, leafIndex: found[0].leafIndex }],
+      amount: 5n,
+      settlementAddress: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
+    });
+    expect(withdraw.outputs[0].note.amount).toBe(0n);
+
+    const { proof, publicSignals } = await snarkjs.groth16.fullProve(withdraw.input, WASM, ZKEY);
     const vkey = JSON.parse(readFileSync(join(CIRCUIT, "verification_key.json"), "utf8"));
     expect(await snarkjs.groth16.verify(vkey, publicSignals, proof)).toBe(true);
   }, 60000);

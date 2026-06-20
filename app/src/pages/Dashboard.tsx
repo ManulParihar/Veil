@@ -53,7 +53,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid sm:grid-cols-3 gap-4">
-        <StatCard label="Notes" value={s.notes.filter((n) => !n.spent).length} sub={`${s.notes.length} total`} />
+        <StatCard label="Notes" value={s.notes.filter((n) => !n.spent && !n.invalidReason).length} sub={`${s.notes.length} total`} />
         <StatCard label="Tree leaves" value={s.nextLeafIndex ?? "—"} sub="commitments on-chain" />
         <StatCard label="Current root" value={<span className="mono text-base">{s.currentRoot ? truncate(s.currentRoot, 6, 4) : "—"}</span>} sub="depth-20 Merkle" />
       </div>

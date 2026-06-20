@@ -20,7 +20,11 @@ export default defineConfig({
           }),
         ]),
   ],
-  test: { environment: "node", testTimeout: 60000 },
+  test: {
+    environment: "node",
+    testTimeout: 60000,
+    exclude: ["node_modules/**", "dist/**", "e2e/**"],
+  },
   server: { port: 5173, host: true },
   preview: { port: 4173, host: true },
   build: { target: "es2022" },

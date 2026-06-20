@@ -193,11 +193,26 @@
                         "vec": [
                           {
                             "symbol": "Token"
+                          },
+                          {
+                            "u32": 0
                           }
                         ]
                       },
                       "val": {
                         "address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "TokenCount"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     },
                     {

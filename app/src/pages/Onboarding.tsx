@@ -81,7 +81,7 @@ export default function Onboarding() {
             <div className="card p-5" data-testid="recovered-summary">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-veil-muted">Recovered shielded balance</div>
-                <div className="text-xs text-veil-muted">{notes.filter((n) => !n.spent).length} notes</div>
+                <div className="text-xs text-veil-muted">{notes.filter((n) => !n.spent && !n.invalidReason).length} notes</div>
               </div>
               <div data-testid="recovered-balance" className="text-3xl font-bold mt-1 tabular-nums">{fromStroops(balanceShielded)} <span className="text-lg text-veil-muted">XLM</span></div>
             </div>

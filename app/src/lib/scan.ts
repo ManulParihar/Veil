@@ -1,6 +1,9 @@
 // Trial-decrypt NewCommit events to discover incoming notes. Fast-path on the
 // 1-byte view tag, then full AEAD decrypt (fail-closed) — never trust the tag.
-import { computeViewTag, decryptNote, encFromWire, type Note, type Keys } from "./crypto";
+import {
+  commitment, computeViewTag, decryptNote, encFromWire, fieldToBytes, toHex,
+  type Note, type Keys,
+} from "./crypto";
 import type { CommitmentEvent } from "./chain";
 
 export interface FoundNote {
@@ -18,7 +21,10 @@ export function scanEvents(keys: Keys, events: CommitmentEvent[]): FoundNote[] {
     if (computeViewTag(keys.encSecret, enc.ephemeralPub) !== ev.viewTag) continue;
     // authoritative: AEAD decrypt
     const note = decryptNote(keys.encSecret, enc);
-    if (note && note.amount > 0n) found.push({ note, leafIndex: ev.leafIndex });
+    if (!note || note.amount <= 0n) continue;
+    if (note.pubkey !== keys.publicKey) continue;
+    if (toHex(fieldToBytes(commitment(note))) !== toHex(ev.commitment)) continue;
+    found.push({ note, leafIndex: ev.leafIndex });
   }
   return found;
 }
