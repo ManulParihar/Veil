@@ -8,7 +8,7 @@
 
 use ark_bn254::Fr;
 use ark_ff::PrimeField;
-use veil_crypto::{fr_from_u64, hash2, hash3, Keypair, Note};
+use veil_crypto::{fr_from_u64, hash2, hash3, hash4, Keypair, Note};
 
 fn dec(x: Fr) -> String {
     x.into_bigint().to_string()
@@ -34,6 +34,19 @@ fn poseidon_1_2_3_matches_circomlib() {
         dec(got),
         "6542985608222806190361240322586112750744169038454362455181422643027100751666",
         "Poseidon(1,2,3) diverged from circomlib"
+    );
+}
+
+/// `Poseidon([1,2,3,4])` width-4 vector (circomlib canonical). This is the
+/// hash the multi-currency commitment is built on, so the circom `Poseidon(4)`
+/// and the TS `circomlibjs` mirror must reproduce it exactly.
+#[test]
+fn poseidon_1_2_3_4_matches_circomlib() {
+    let got = hash4(fr_from_u64(1), fr_from_u64(2), fr_from_u64(3), fr_from_u64(4));
+    assert_eq!(
+        dec(got),
+        "18821383157269793795438455681495246036402687001665670618754263018637548127333",
+        "Poseidon(1,2,3,4) diverged from circomlib - the width-4 gate is broken"
     );
 }
 
@@ -77,6 +90,7 @@ fn matches_light_poseidon_reference() {
         vec![fr_from_u64(1)],
         vec![fr_from_u64(1), fr_from_u64(2)],
         vec![fr_from_u64(7), fr_from_u64(13), fr_from_u64(99)],
+        vec![fr_from_u64(100), fr_from_u64(1), fr_from_u64(7), fr_from_u64(42)],
     ] {
         let ours = veil_crypto::hashn(&inputs);
         let mut reference = Poseidon::<Fr>::new_circom(inputs.len()).unwrap();
