@@ -349,8 +349,13 @@ export const useWallet = create<Internal>()(
           // the depositor (whose tokens are pulled) is the active payer account —
           // the connected wallet, or the local fee account.
           const depositor = get().payerPublicKey()!;
+          // Deposit inputs are dummies (Merkle membership is skipped), so the
+          // witness root only has to be a KNOWN on-chain root — use the chain's
+          // current root directly. This avoids UnknownRoot when the client mirror
+          // tree is incomplete (e.g. RPC event window missed early commitments).
+          const rootHex = await chain.getCurrentRoot(depositor);
           const bundle = buildDeposit({
-            root: T().root(), sk: keys.spendKey, selfPub: keys.publicKey,
+            root: BigInt("0x" + rootHex), sk: keys.spendKey, selfPub: keys.publicKey,
             selfEncPub: keys.encPublic, amount, currencyId, settlementAddress: depositor,
           });
           return runFlow("deposit", currencyId, amount, bundle, (res) => {

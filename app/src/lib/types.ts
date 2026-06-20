@@ -5,6 +5,10 @@ import type { Note } from "./crypto";
 import type { Signer } from "./signer";
 
 export const CONTRACT_ID = "CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4";
+/** Ledger the contract was deployed at — the start for a full event scan so the
+ *  client Merkle tree includes leaf 0. (RPC retains ~7 days; once the contract is
+ *  older than that, the durable indexer is required for full history.) */
+export const CONTRACT_START_LEDGER = 3187302;
 export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 export const RPC_URL = "https://soroban-testnet.stellar.org";
 export const FRIENDBOT = "https://friendbot.stellar.org";
@@ -106,6 +110,9 @@ export interface WalletState {
   currentRoot: string | null; // hex, from chain
   nextLeafIndex: number | null;
   txs: TxRecord[];
+  /** Per-identity activity archive (keyed by seedHex) so disconnecting and
+   *  reconnecting the same identity restores its local history. */
+  txArchive: Record<string, TxRecord[]>;
 
   // status flags
   busy: boolean; // a transact is in flight
@@ -118,6 +125,9 @@ export interface WalletState {
   /** Connect an external Stellar wallet (Freighter, xBull, …) as the signer and
    *  derive a deterministic shielded identity from a wallet signature. */
   connectWallet: () => Promise<void>;
+  /** Sign out of the active identity but keep its activity archive, so
+   *  reconnecting the same identity restores history. */
+  disconnect: () => void;
   reset: () => void;
 
   // signer accessors

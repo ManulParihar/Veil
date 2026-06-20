@@ -7,7 +7,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { hkdf } from "@noble/hashes/hkdf";
 import { sha256 } from "@noble/hashes/sha256";
-import { CONTRACT_ID, NETWORK_PASSPHRASE, RPC_URL, FRIENDBOT } from "./types";
+import { CONTRACT_ID, CONTRACT_START_LEDGER, NETWORK_PASSPHRASE, RPC_URL, FRIENDBOT } from "./types";
 import type { ProofBytes } from "./proof";
 import type { Signer } from "./signer";
 import { toHex, fromHex } from "./crypto";
@@ -264,20 +264,32 @@ export interface CommitmentEvent {
 
 export async function getNewCommitments(startLedger?: number): Promise<CommitmentEvent[]> {
   const s = server();
-  const latest = await s.getLatestLedger();
-  // The RPC scans only a bounded ledger window per getEvents call, so a start far
-  // in the past yields an empty first page. Start within ~6h of head (well inside
-  // RPC retention); the durable indexer (PLANE 4b) is the answer for full history.
-  const from = startLedger ?? Math.max(latest.sequence - 6000, 1);
+  // Start from the contract's deploy ledger so the tree includes leaf 0 — a fixed
+  // recent window misses the earliest commitments and corrupts the whole tree
+  // (wrong leaf indices → wrong root). Clamp to RPC retention; if the contract is
+  // older than retention, full history needs the durable indexer (PLANE 4b).
+  let from = startLedger ?? CONTRACT_START_LEDGER;
   const LIMIT = 200;
   const out: CommitmentEvent[] = [];
   let cursor: string | undefined;
-  for (let page = 0; page < 30; page++) {
-    const resp: any = await s.getEvents({
-      ...(cursor ? { cursor } : { startLedger: from }),
-      filters: [{ type: "contract", contractIds: [CONTRACT_ID] }],
-      limit: LIMIT,
-    } as any);
+  for (let page = 0; page < 60; page++) {
+    let resp: any;
+    try {
+      resp = await s.getEvents({
+        ...(cursor ? { cursor } : { startLedger: from }),
+        filters: [{ type: "contract", contractIds: [CONTRACT_ID] }],
+        limit: LIMIT,
+      } as any);
+    } catch (e: any) {
+      // RPC rejects a startLedger below its retention floor — clamp to it and retry
+      // once (the tree will then be incomplete; the indexer is the durable fix).
+      const m = /(\d{6,})/.exec(String(e?.message ?? e));
+      if (page === 0 && !cursor && m && Number(m[1]) > from) {
+        from = Number(m[1]) + 1;
+        continue;
+      }
+      throw e;
+    }
     const evs = resp.events ?? [];
     for (const ev of evs) {
       const topics = ev.topic.map((t: xdr.ScVal) => scValToNative(t));
@@ -292,9 +304,11 @@ export async function getNewCommitments(startLedger?: number): Promise<Commitmen
         ledger: Number(ev.ledger),
       });
     }
-    // last page reached when fewer than LIMIT events come back
-    if (evs.length < LIMIT || !resp.cursor) break;
     cursor = resp.cursor;
+    if (!cursor) break;
+    // events are dense near the contract's activity; an empty page after the
+    // first means we've caught up to head.
+    if (evs.length === 0 && page > 0) break;
   }
   // dedupe by leaf index (idempotent) and order
   const byIdx = new Map<number, CommitmentEvent>();
