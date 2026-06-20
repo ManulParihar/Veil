@@ -9,6 +9,10 @@ export default function Dashboard() {
   const s = useWallet();
   const balances = s.balancesByCurrency ?? {};
   const heldCurrencies = CURRENCIES.filter((c) => (balances[c.id] ?? 0n) > 0n);
+  // Hero currency: prefer XLM if held, else the first held asset, else XLM (zero).
+  // Keeps a held-only-VUSD balance visible instead of always showing "0 XLM".
+  const hero = heldCurrencies.find((c) => c.id === 0) ?? heldCurrencies[0] ?? currencyById(0);
+  const otherHeld = heldCurrencies.filter((c) => c.id !== hero.id);
   useEffect(() => {
     s.refreshFeeBalance().catch(() => {});
     s.syncChain().catch(() => {});
@@ -30,11 +34,11 @@ export default function Dashboard() {
       <div className="card p-7 shadow-glow border-veil-primary/30 bg-gradient-to-br from-veil-primary/10 to-transparent">
         <div className="text-sm text-veil-muted">Shielded balance</div>
         <div data-testid="balance" className="text-5xl font-bold tabular-nums mt-1">
-          {fromBaseUnits(balances[0] ?? 0n, currencyById(0).decimals)} <span className="text-2xl text-veil-muted">XLM</span>
+          {fromBaseUnits(balances[hero.id] ?? 0n, hero.decimals)} <span className="text-2xl text-veil-muted">{hero.symbol}</span>
         </div>
-        {heldCurrencies.length > 1 && (
+        {otherHeld.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2" data-testid="balance-breakdown">
-            {heldCurrencies.map((c) => (
+            {otherHeld.map((c) => (
               <span key={c.id} className="rounded-full bg-veil-primary/10 px-3 py-1 text-sm tabular-nums">
                 {fromBaseUnits(balances[c.id] ?? 0n, c.decimals)} {c.symbol}
               </span>

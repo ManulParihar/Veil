@@ -79,7 +79,7 @@ export default function Deposit() {
         </div>
         <div>
           <div className="label">Amount</div>
-          <AmountInput value={amount} onChange={setAmount} testid="deposit-amount" />
+          <AmountInput value={amount} onChange={setAmount} unit={currency.symbol} testid="deposit-amount" />
         </div>
         <button
           data-testid="deposit-submit"

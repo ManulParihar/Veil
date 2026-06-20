@@ -164,29 +164,58 @@ export function buildDeposit(params: {
   );
 }
 
-/** Transfer: spend one real note, send `amount` to recipient, change back to self. */
+/** A real note being spent, with its on-chain leaf position. */
+export interface SpendInput {
+  note: Note;
+  leafIndex: number;
+}
+
+/** Build the circuit's two input slots from 1 or 2 real notes (the joinsplit is
+ *  2-in). One note → [real, dummy]; two notes → [real, real], which lets a spend
+ *  COMBINE notes (the key to spending more than your largest single note). All
+ *  inputs must be the same asset; returns the specs + their value sum. */
+function spendInputs(
+  tree: ClientMerkleTree, sk: bigint, inputs: SpendInput[]
+): { specs: [InputSpec, InputSpec]; sumIn: bigint; currencyId: number } {
+  if (inputs.length < 1 || inputs.length > 2) throw new Error("a spend takes 1 or 2 input notes");
+  const currencyId = inputs[0].note.currencyId;
+  const real = inputs.map((inp) => {
+    if (inp.note.currencyId !== currencyId) throw new Error("all inputs must be the same asset");
+    assertSpendable(sk, inp.note);
+    const path = tree.path(inp.leafIndex);
+    if (!path) throw new Error("input note not in tree");
+    return {
+      amount: inp.note.amount, sk, blinding: inp.note.blinding,
+      pathIndex: path.pathIndex, pathElements: path.pathElements,
+    } as InputSpec;
+  });
+  const sumIn = inputs.reduce((s, i) => s + i.note.amount, 0n);
+  if (real.length === 1) {
+    // pad with a dummy at a distinct index (its random blinding already makes its
+    // nullifier distinct, but keep the index different too).
+    const p = real[0].pathIndex;
+    real.push(dummyInput(sk, p === 0 ? 1 : p - 1));
+  } else if (real[0].pathIndex === real[1].pathIndex) {
+    throw new Error("cannot spend the same note twice");
+  }
+  return { specs: [real[0], real[1]], sumIn, currencyId };
+}
+
+/** Transfer: spend 1–2 real notes, send `amount` to recipient, change back to self. */
 export function buildTransfer(params: {
   tree: ClientMerkleTree;
   sk: bigint; selfPub: bigint; selfEncPub: Uint8Array;
-  inputNote: Note; inputLeafIndex: number;
+  inputs: SpendInput[];
   amount: bigint; recipientPub: bigint; recipientEncPub: Uint8Array;
   settlementAddress: string;
 }): WitnessBundle {
-  const { tree, sk, selfPub, selfEncPub, inputNote, inputLeafIndex, amount, recipientPub, recipientEncPub, settlementAddress } = params;
-  assertSpendable(sk, inputNote);
-  const path = tree.path(inputLeafIndex);
-  if (!path) throw new Error("input note not in tree");
-  const change = inputNote.amount - amount;
-  if (change < 0n) throw new Error("insufficient note value");
-  const real: InputSpec = {
-    amount: inputNote.amount, sk, blinding: inputNote.blinding,
-    pathIndex: path.pathIndex, pathElements: path.pathElements,
-  };
-  const dummy = dummyInput(sk, (path.pathIndex ^ 1) >>> 0 === path.pathIndex ? path.pathIndex + 2 : path.pathIndex + 1);
-  // The transfer inherits the spent note's currency (one asset per tx).
+  const { tree, sk, selfPub, selfEncPub, inputs, amount, recipientPub, recipientEncPub, settlementAddress } = params;
+  const { specs, sumIn, currencyId } = spendInputs(tree, sk, inputs);
+  const change = sumIn - amount;
+  if (change < 0n) throw new Error("inputs don't cover the amount");
   return assemble(
-    tree.root(), 0n, inputNote.currencyId,
-    [real, dummy],
+    tree.root(), 0n, currencyId,
+    specs,
     [
       { amount, pubkey: recipientPub, blinding: rand(), encPub: recipientEncPub },
       { amount: change, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
@@ -195,27 +224,20 @@ export function buildTransfer(params: {
   );
 }
 
-/** Withdraw: burn `amount` from a real note (publicAmount = R - amount), change to self. */
+/** Withdraw: burn `amount` from 1–2 real notes (publicAmount = R - amount), change to self. */
 export function buildWithdraw(params: {
   tree: ClientMerkleTree;
   sk: bigint; selfPub: bigint; selfEncPub: Uint8Array;
-  inputNote: Note; inputLeafIndex: number; amount: bigint;
+  inputs: SpendInput[]; amount: bigint;
   settlementAddress: string;
 }): WitnessBundle {
-  const { tree, sk, selfPub, selfEncPub, inputNote, inputLeafIndex, amount, settlementAddress } = params;
-  assertSpendable(sk, inputNote);
-  const path = tree.path(inputLeafIndex);
-  if (!path) throw new Error("input note not in tree");
-  const change = inputNote.amount - amount;
-  if (change < 0n) throw new Error("insufficient note value");
-  const real: InputSpec = {
-    amount: inputNote.amount, sk, blinding: inputNote.blinding,
-    pathIndex: path.pathIndex, pathElements: path.pathElements,
-  };
-  const dummy = dummyInput(sk, path.pathIndex + 1);
+  const { tree, sk, selfPub, selfEncPub, inputs, amount, settlementAddress } = params;
+  const { specs, sumIn, currencyId } = spendInputs(tree, sk, inputs);
+  const change = sumIn - amount;
+  if (change < 0n) throw new Error("inputs don't cover the amount");
   return assemble(
-    tree.root(), (R - amount) % R, inputNote.currencyId,
-    [real, dummy],
+    tree.root(), (R - amount) % R, currencyId,
+    specs,
     [
       { amount: change, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },
       { amount: 0n, pubkey: selfPub, blinding: rand(), encPub: selfEncPub },

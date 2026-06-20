@@ -64,7 +64,7 @@ export default function Send() {
         </div>
         <div>
           <div className="label">Amount</div>
-          <AmountInput value={amount} onChange={setAmount} max={fromBaseUnits(balance, currency.decimals)} testid="send-amount" />
+          <AmountInput value={amount} onChange={setAmount} max={fromBaseUnits(balance, currency.decimals)} unit={currency.symbol} testid="send-amount" />
         </div>
         <button data-testid="send-submit" onClick={submit} disabled={busy} className="btn-primary w-full py-3">
           {busy ? <><Spinner /> Proving…</> : "Send privately"}

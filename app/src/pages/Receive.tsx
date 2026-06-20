@@ -2,13 +2,16 @@ import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWallet } from "../store/wallet";
 import { AddressBadge, Spinner, useToast } from "../components/ui";
+import { formatAmount } from "../lib/currencies";
 
 export default function Receive() {
-  const { address, scanForNotes, syncing } = useWallet();
+  const { address, notes, scanForNotes, syncing } = useWallet();
   const toast = useToast();
   const [scanning, setScanning] = useState(false);
   if (!address) return null;
   const full = `${address.pubkey}.${address.encPub}`;
+  // newest first so freshly-scanned notes surface at the top
+  const sortedNotes = [...notes].sort((a, b) => (b.leafIndex ?? 0) - (a.leafIndex ?? 0));
 
   const scan = async () => {
     setScanning(true);
@@ -42,6 +45,30 @@ export default function Receive() {
         <button data-testid="scan-btn" onClick={scan} disabled={scanning || syncing} className="btn-primary w-full mt-4">
           {scanning || syncing ? <><Spinner /> Scanning…</> : "Scan for notes"}
         </button>
+      </div>
+
+      <div className="card p-6">
+        <div className="flex items-center justify-between">
+          <div className="font-medium">Your notes</div>
+          <span className="text-xs text-veil-muted">{sortedNotes.length} total</span>
+        </div>
+        {sortedNotes.length === 0 ? (
+          <p className="text-sm text-veil-muted mt-2">No notes yet. Scan after someone sends to you, or deposit to mint your first note.</p>
+        ) : (
+          <div className="mt-3 divide-y divide-veil-border" data-testid="received-notes">
+            {sortedNotes.map((n) => (
+              <div key={n.leafIndex ?? `${n.createdAt}`} className="flex items-center justify-between py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="tabular-nums font-medium">{formatAmount(n.note.amount, n.note.currencyId)}</span>
+                  {n.leafIndex != null && <span className="text-xs text-veil-muted">leaf #{n.leafIndex}</span>}
+                </div>
+                <span className={`text-xs rounded-full px-2.5 py-0.5 ${n.spent ? "bg-veil-border text-veil-muted" : "bg-veil-success/15 text-veil-success"}`}>
+                  {n.spent ? "spent" : "unspent"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
