@@ -13,6 +13,7 @@ import { proofToBytes, publicSignalsToBytes } from "../lib/proof";
 import * as chain from "../lib/chain";
 import { scanEvents } from "../lib/scan";
 import { faucetFor, faucetSecret } from "../lib/faucet";
+import { currencyById, toBaseUnits } from "../lib/currencies";
 import {
   type WalletState, type StoredNote, type TxRecord, type FeeAccount, type TransactResult,
   CONTRACT_ID,
@@ -72,13 +73,14 @@ export const useWallet = create<Internal>()(
       // run a witness → prove → submit pipeline, driving a TxRecord
       const runFlow = async (
         kind: TxRecord["kind"],
+        currencyId: number,
         amount: bigint,
         bundle: WitnessBundle,
         onSuccess: (res: chain.SubmitResult) => void
       ): Promise<TransactResult> => {
         const { seedHex, _feeSecret } = get();
         if (!seedHex || !_feeSecret) throw new Error("wallet not ready");
-        const txId = pushTx({ kind, amount, status: "building", stage: "Assembling witness" });
+        const txId = pushTx({ kind, currencyId, amount, status: "building", stage: "Assembling witness" });
         try {
           updateTx(txId, { status: "proving", stage: "Generating zero-knowledge proof" });
           const { proof, publicSignals } = await prove(bundle.input);
@@ -135,7 +137,9 @@ export const useWallet = create<Internal>()(
           const seed = seedHex ? fromHex(seedHex) : crypto.getRandomValues(new Uint8Array(32));
           const hex = toHex(seed);
           KEYS = deriveKeys(seed);
-          const kp = chain.generateKeypair();
+          // Fee account is derived from the seed (deterministic), so importing the
+          // same seed restores the same Stellar account.
+          const kp = chain.feeKeypairFromSeed(seed);
           set({
             initialised: true,
             seedHex: hex,
@@ -145,11 +149,15 @@ export const useWallet = create<Internal>()(
             notes: [],
             txs: [],
             balanceShielded: 0n,
+            balancesByCurrency: {},
           });
         },
 
         importIdentity: async (seedHex: string) => {
           await get().createIdentity(seedHex);
+          // The recovered fee account may already be funded on-chain; reflect that
+          // so the user is not asked to re-fund a working account.
+          await get().refreshFeeBalance().catch(() => {});
         },
 
         reset: () => {
@@ -165,9 +173,21 @@ export const useWallet = create<Internal>()(
         fundFeeAccount: async () => {
           const fa = get().feeAccount;
           if (!fa) throw new Error("no fee account");
+          const before = parseFloat(await chain.getXlmBalance(fa.publicKey).catch(() => "0"));
           await chain.friendbotFund(fa.publicKey);
           set((s) => ({ feeAccount: s.feeAccount ? { ...s.feeAccount, funded: true } : null }));
           await get().refreshFeeBalance();
+          // Record the friendbot grant in the activity feed (XLM = currency 0).
+          const after = parseFloat(await chain.getXlmBalance(fa.publicKey).catch(() => "0"));
+          const granted = after - before;
+          if (granted > 0) {
+            pushTx({
+              kind: "fund",
+              currencyId: 0,
+              amount: BigInt(Math.round(granted * 1e7)),
+              status: "success",
+            });
+          }
         },
 
         refreshFeeBalance: async () => {
@@ -254,7 +274,7 @@ export const useWallet = create<Internal>()(
             root: T().root(), sk: keys.spendKey, selfPub: keys.publicKey,
             selfEncPub: keys.encPublic, amount, currencyId, settlementAddress: depositor,
           });
-          return runFlow("deposit", amount, bundle, (res) => {
+          return runFlow("deposit", currencyId, amount, bundle, (res) => {
             // output 0 = the funded note at leafIndices[0]
             const note: Note = { amount, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding };
             set((s) => ({
@@ -273,13 +293,22 @@ export const useWallet = create<Internal>()(
           const secret = faucetSecret();
           if (!secret) throw new Error("faucet not configured (set VITE_VUSD_FAUCET_SECRET in app/.env.local)");
           if (!feeAccount.funded) throw new Error("fund your fee account first (it pays the trustline reserve)");
-          return chain.faucetDrip({
-            feeSecret: _feeSecret,
-            faucetSecret: secret,
-            assetCode: cfg.assetCode,
-            issuer: cfg.issuer,
-            amount: cfg.dripAmount,
-          });
+          const amount = toBaseUnits(cfg.dripAmount, currencyById(currencyId).decimals);
+          const txId = pushTx({ kind: "faucet", currencyId, amount, status: "submitting", stage: "Dripping tokens" });
+          try {
+            const hash = await chain.faucetDrip({
+              feeSecret: _feeSecret,
+              faucetSecret: secret,
+              assetCode: cfg.assetCode,
+              issuer: cfg.issuer,
+              amount: cfg.dripAmount,
+            });
+            updateTx(txId, { status: "success", hash, stage: undefined });
+            return hash;
+          } catch (e: any) {
+            updateTx(txId, { status: "error", error: String(e?.message ?? e), stage: undefined });
+            throw e;
+          }
         },
 
         send: async (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => {
@@ -304,7 +333,7 @@ export const useWallet = create<Internal>()(
             settlementAddress: get().feeAccount!.publicKey,
           });
           const change = input.note.amount - amount;
-          return runFlow("transfer", amount, bundle, (res) => {
+          return runFlow("transfer", currencyId, amount, bundle, (res) => {
             set((s) => {
               const notes = s.notes.map((n) => (n.leafIndex === input.leafIndex ? { ...n, spent: true } : n));
               if (change > 0n) {
@@ -336,7 +365,7 @@ export const useWallet = create<Internal>()(
             settlementAddress: toStellar, // XLM is released here
           });
           const change = input.note.amount - amount;
-          return runFlow("withdraw", amount, bundle, (res) => {
+          return runFlow("withdraw", currencyId, amount, bundle, (res) => {
             set((s) => {
               const notes = s.notes.map((n) => (n.leafIndex === input.leafIndex ? { ...n, spent: true } : n));
               if (change > 0n) {

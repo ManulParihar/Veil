@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "../store/wallet";
-import { Logo, Spinner, AddressBadge, useToast } from "../components/ui";
-import { fromStroops } from "../lib/types";
+import { Logo, Spinner, AddressBadge, ExplorerLink, SecretReveal, useToast } from "../components/ui";
+import { fromStroops, EXPLORER_ACCOUNT } from "../lib/types";
 
 export default function Onboarding() {
   const {
@@ -36,10 +36,14 @@ export default function Onboarding() {
   const fund = async () => {
     setBusy(true);
     try {
-      await fundFeeAccount();
+      // A recovered account is often already funded on-chain; don't re-run
+      // friendbot, just continue into the app.
+      if (!feeAccount?.funded) {
+        await fundFeeAccount();
+        toast.push("Fee account funded", "ok");
+      }
       // with a funded account we can reconcile spent state precisely
       if (recovered) await scanForNotes().catch(() => {});
-      toast.push("Fee account funded", "ok");
       nav("/");
     } catch (e: any) { toast.push(e.message, "err"); } finally { setBusy(false); }
   };
@@ -69,14 +73,18 @@ export default function Onboarding() {
           ) : (
             <div className="card p-5">
               <div className="label">Your recovery seed</div>
-              <div data-testid="seed-display" className="mono text-sm break-all bg-veil-surface rounded-xl p-3 border border-veil-border">{seedHex}</div>
-              <div className="mt-3"><AddressBadge value={seedHex} label="seed" testid="copy-seed" /></div>
+              <SecretReveal value={seedHex} testid="seed-display" />
             </div>
           )}
           <div className="card p-5">
             <div className="font-medium">Fund your fee-payer account</div>
-            <p className="text-sm text-veil-muted mt-1">A separate Stellar account pays network fees. Fund it instantly from the testnet friendbot.</p>
-            {feeAccount && <div className="mt-2"><AddressBadge value={feeAccount.publicKey} label="account" /></div>}
+            <p className="text-sm text-veil-muted mt-1">A separate Stellar account pays network fees. It is derived from your seed, so recovering your seed restores the same account. Fund it instantly from the testnet friendbot.</p>
+            {feeAccount && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <AddressBadge value={feeAccount.publicKey} label="account" testid="fee-account" />
+                <ExplorerLink url={EXPLORER_ACCOUNT + feeAccount.publicKey} testid="fee-account-explorer" />
+              </div>
+            )}
             <button data-testid="fund-btn" onClick={fund} disabled={busy} className="btn-primary w-full mt-4">
               {busy ? <Spinner /> : null} {feeAccount?.funded ? "Continue" : "Fund with Friendbot"}
             </button>

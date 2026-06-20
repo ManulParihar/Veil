@@ -6,8 +6,22 @@ import {
   encryptNote, decryptNote, computeViewTag, encWire, encFromWire,
   extDataHash, fieldToBytes,
 } from "./crypto";
+import { feeKeypairFromSeed } from "./chain";
 
 beforeAll(async () => { await initCrypto(); });
+
+describe("fee account is deterministic from the seed", () => {
+  it("same seed -> same Stellar account, different seed -> different", () => {
+    const seedA = fieldToBytes(123456789n);
+    const seedB = fieldToBytes(987654321n);
+    const a1 = feeKeypairFromSeed(seedA).publicKey();
+    const a2 = feeKeypairFromSeed(seedA).publicKey();
+    const b1 = feeKeypairFromSeed(seedB).publicKey();
+    expect(a1).toBe(a2); // reproducible -> recovery restores the same account
+    expect(a1).not.toBe(b1);
+    expect(a1.startsWith("G")).toBe(true);
+  });
+});
 
 describe("Poseidon == circomlib pinned vectors", () => {
   it("Poseidon(1,2)", () => {

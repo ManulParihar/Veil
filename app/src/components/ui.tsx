@@ -63,6 +63,58 @@ export function AddressBadge({ value, label, testid }: { value: string; label?: 
   );
 }
 
+/** A small external-link button to a block explorer (or any URL). */
+export function ExplorerLink({ url, label = "explorer", testid }: { url: string; label?: string; testid?: string }) {
+  return (
+    <a href={url} target="_blank" rel="noreferrer" data-testid={testid} title="View on Stellar Expert"
+      className="inline-flex items-center gap-1 rounded-lg border border-veil-border px-2.5 py-1.5 text-xs text-veil-accent hover:border-veil-primary transition">
+      {label} ↗
+    </a>
+  );
+}
+
+/**
+ * A secret value (e.g. the recovery seed) masked by default, with a reveal
+ * toggle and a copy button. Copy always copies the real value, even while masked.
+ */
+export function SecretReveal({ value, testid }: { value: string; testid?: string }) {
+  const [shown, setShown] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  const masked = "•".repeat(Math.min(value.length, 64));
+  return (
+    <div className="space-y-2">
+      <div
+        data-testid={testid}
+        data-revealed={shown}
+        className="mono text-sm break-all bg-veil-surface rounded-xl p-3 border border-veil-border select-all"
+      >
+        {shown ? value : masked}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setShown((v) => !v)}
+          data-testid={testid ? `${testid}-reveal` : undefined}
+          className="rounded-lg border border-veil-border px-3 py-1.5 text-xs text-veil-muted hover:border-veil-primary hover:text-veil-text transition"
+        >
+          {shown ? "Hide" : "Reveal"}
+        </button>
+        <button
+          onClick={copy}
+          data-testid={testid ? `${testid}-copy` : undefined}
+          className={`rounded-lg border border-veil-border px-3 py-1.5 text-xs transition hover:border-veil-primary ${copied ? "text-veil-success" : "text-veil-muted hover:text-veil-text"}`}
+        >
+          {copied ? "copied" : "copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AmountInput({ value, onChange, max, testid }: { value: string; onChange: (v: string) => void; max?: string; testid?: string }) {
   const sanitize = (v: string) => {
     const cleaned = v.replace(/[^0-9.]/g, "");

@@ -8,6 +8,7 @@ export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 export const RPC_URL = "https://soroban-testnet.stellar.org";
 export const FRIENDBOT = "https://friendbot.stellar.org";
 export const EXPLORER_TX = "https://stellar.expert/explorer/testnet/tx/";
+export const EXPLORER_ACCOUNT = "https://stellar.expert/explorer/testnet/account/";
 export const TREE_LEVELS = 20;
 
 /** Note amounts are denominated in stroops (1 XLM = 10^7 stroops). */
@@ -41,7 +42,7 @@ export interface StoredNote {
 }
 
 export type TxStatus = "building" | "proving" | "submitting" | "success" | "error";
-export type TxKind = "transfer" | "deposit" | "withdraw" | "receive";
+export type TxKind = "transfer" | "deposit" | "withdraw" | "receive" | "faucet" | "fund";
 
 /** An activity-feed entry. */
 export interface TxRecord {
@@ -49,6 +50,8 @@ export interface TxRecord {
   kind: TxKind;
   status: TxStatus;
   amount: bigint;
+  /** Asset the amount is denominated in (registry index). Defaults to 0 (XLM). */
+  currencyId?: number;
   hash?: string; // stellar tx hash
   error?: string;
   createdAt: number;

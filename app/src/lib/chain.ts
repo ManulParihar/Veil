@@ -5,11 +5,24 @@ import {
   rpc, Contract, TransactionBuilder, Keypair, Account, xdr, nativeToScVal,
   scValToNative, Address, authorizeEntry, Operation, Asset,
 } from "@stellar/stellar-sdk";
+import { hkdf } from "@noble/hashes/hkdf";
+import { sha256 } from "@noble/hashes/sha256";
 import { CONTRACT_ID, NETWORK_PASSPHRASE, RPC_URL, FRIENDBOT } from "./types";
 import type { ProofBytes } from "./proof";
 import { toHex, fromHex } from "./crypto";
 
 const server = () => new rpc.Server(RPC_URL, { allowHttp: false });
+
+/**
+ * Derive the Stellar fee-payer keypair deterministically from the wallet seed,
+ * so recovering a seed restores the SAME fee account (no device-local randomness
+ * in a key path). Separate HKDF info string from the x25519 enc key so the two
+ * never collide.
+ */
+export function feeKeypairFromSeed(seed: Uint8Array): Keypair {
+  const raw = hkdf(sha256, seed, undefined, new TextEncoder().encode("veil-fee-stellar"), 32);
+  return Keypair.fromRawEd25519Seed(Buffer.from(raw));
+}
 
 // ── ScVal builders for the contract's #[contracttype] structs ──
 const sym = (s: string) => xdr.ScVal.scvSymbol(s);
@@ -64,9 +77,6 @@ function extScVal(e: ExtDataWire): xdr.ScVal {
 }
 
 // ── accounts ──
-export function generateKeypair() {
-  return Keypair.random();
-}
 
 export async function friendbotFund(publicKey: string): Promise<void> {
   const res = await fetch(`${FRIENDBOT}?addr=${encodeURIComponent(publicKey)}`);

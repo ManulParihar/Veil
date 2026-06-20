@@ -2,8 +2,8 @@ import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "../store/wallet";
 import { StatCard, AddressBadge, StatusChip, truncate, Spinner } from "../components/ui";
-import { EXPLORER_TX, fromStroops } from "../lib/types";
-import { CURRENCIES, currencyById, fromBaseUnits } from "../lib/currencies";
+import { EXPLORER_TX } from "../lib/types";
+import { CURRENCIES, currencyById, fromBaseUnits, formatAmount } from "../lib/currencies";
 
 export default function Dashboard() {
   const s = useWallet();
@@ -78,7 +78,7 @@ export default function Dashboard() {
                   <StatusChip status={t.status} />
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="tabular-nums">{fromStroops(t.amount)} XLM</span>
+                  <span className="tabular-nums">{formatAmount(t.amount, t.currencyId)}</span>
                   {t.hash && <a href={EXPLORER_TX + t.hash} target="_blank" rel="noreferrer" className="text-xs text-veil-accent hover:underline">{truncate(t.hash, 6, 4)} ↗</a>}
                 </div>
               </div>

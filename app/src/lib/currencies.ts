@@ -44,6 +44,12 @@ export function toBaseUnits(amount: string, decimals: number): bigint {
   return BigInt(whole || "0") * base + BigInt(fracPadded || "0");
 }
 
+/** Format an amount + currency for display, e.g. "1000 VUSD". Defaults to XLM. */
+export function formatAmount(amount: bigint, currencyId?: number): string {
+  const c = currencyById(currencyId ?? DEFAULT_CURRENCY_ID);
+  return `${fromBaseUnits(amount, c.decimals)} ${c.symbol}`;
+}
+
 /** Format base units as a human amount string (trailing zeros trimmed). */
 export function fromBaseUnits(v: bigint, decimals: number): string {
   const neg = v < 0n;
