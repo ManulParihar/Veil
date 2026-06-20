@@ -60,7 +60,7 @@ export default function Withdraw() {
         </div>
         <div>
           <div className="label">Amount</div>
-          <AmountInput value={amount} onChange={setAmount} max={fromBaseUnits(balance, currency.decimals)} testid="withdraw-amount" />
+          <AmountInput value={amount} onChange={setAmount} max={fromBaseUnits(balance, currency.decimals)} unit={currency.symbol} testid="withdraw-amount" />
         </div>
         <button data-testid="withdraw-submit" onClick={submit} disabled={busy} className="btn-primary w-full py-3">
           {busy ? <><Spinner /> Proving…</> : "Withdraw to Stellar"}

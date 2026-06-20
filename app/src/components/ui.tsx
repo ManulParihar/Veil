@@ -115,7 +115,7 @@ export function SecretReveal({ value, testid }: { value: string; testid?: string
   );
 }
 
-export function AmountInput({ value, onChange, max, testid }: { value: string; onChange: (v: string) => void; max?: string; testid?: string }) {
+export function AmountInput({ value, onChange, max, unit = "XLM", testid }: { value: string; onChange: (v: string) => void; max?: string; unit?: string; testid?: string }) {
   const sanitize = (v: string) => {
     const cleaned = v.replace(/[^0-9.]/g, "");
     const i = cleaned.indexOf(".");
@@ -132,11 +132,11 @@ export function AmountInput({ value, onChange, max, testid }: { value: string; o
           value={value}
           onChange={(e) => onChange(sanitize(e.target.value))}
         />
-        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-veil-muted font-medium">XLM</span>
+        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-veil-muted font-medium">{unit}</span>
       </div>
       {max !== undefined && (
         <button onClick={() => onChange(max)} className="mt-1.5 text-xs text-veil-primary hover:underline">
-          Max: {max} XLM
+          Max: {max} {unit}
         </button>
       )}
     </div>

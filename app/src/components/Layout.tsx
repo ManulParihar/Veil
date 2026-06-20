@@ -22,7 +22,7 @@ function Icon({ d }: { d: string }) {
 }
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const { feeAccount, feeBalance, reset } = useWallet();
+  const { feeAccount, feeBalance, disconnect } = useWallet();
   const nav = useNavigate();
   return (
     <div className="min-h-full flex">
@@ -69,7 +69,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             <span className="inline-flex items-center gap-1.5 text-xs text-veil-muted">
               <span className="h-2 w-2 rounded-full bg-veil-accent animate-pulse" /> Testnet
             </span>
-            <button onClick={() => { reset(); nav("/welcome"); }} className="text-xs text-veil-muted hover:text-veil-danger">reset</button>
+            <button onClick={() => { disconnect(); nav("/welcome"); }} className="text-xs text-veil-muted hover:text-veil-danger">Disconnect</button>
           </div>
         </div>
       </aside>
