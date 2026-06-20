@@ -8,7 +8,7 @@
 
 #![allow(deprecated)]
 
-use soroban_sdk::{symbol_short, Bytes, BytesN, Env};
+use soroban_sdk::{symbol_short, Address, Bytes, BytesN, Env};
 
 /// `NewCommitment(commitment, leaf_index, ciphertext, view_tag)`.
 /// One per inserted output commitment; carries the AEAD ciphertext + view tag
@@ -38,4 +38,10 @@ pub fn nullifier(env: &Env, nf: &BytesN<32>) {
 pub fn transact(env: &Env, root: &BytesN<32>) {
     let topics = (symbol_short!("Transact"),);
     env.events().publish(topics, (root.clone(),));
+}
+
+/// `TokenReg(currency_id, token)` — emitted when the admin registers a new asset.
+pub fn token_registered(env: &Env, currency_id: u32, token: &Address) {
+    let topics = (symbol_short!("TokenReg"),);
+    env.events().publish(topics, (currency_id, token.clone()));
 }

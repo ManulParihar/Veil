@@ -103,7 +103,8 @@ fn ext_data_hash(env: &Env, ext: &ExtData) -> BytesN<32> {
 }
 
 /// Build well-formed signals for a transfer against `root`, with the given
-/// distinct nullifiers and output commitments, binding `ext`.
+/// distinct nullifiers and output commitments, binding `ext`. Uses currency 0
+/// (the init token), which every harness registers at `init`.
 fn signals(
     env: &Env,
     root: &BytesN<32>,
@@ -113,6 +114,21 @@ fn signals(
     cm0: u8,
     cm1: u8,
 ) -> PublicSignals {
+    signals_cur(env, root, ext, nf0, nf1, cm0, cm1, 0)
+}
+
+/// As [`signals`], but for an explicit `currency_id`.
+#[allow(clippy::too_many_arguments)]
+fn signals_cur(
+    env: &Env,
+    root: &BytesN<32>,
+    ext: &ExtData,
+    nf0: u8,
+    nf1: u8,
+    cm0: u8,
+    cm1: u8,
+    currency_id: u32,
+) -> PublicSignals {
     PublicSignals {
         root: root.clone(),
         public_amount: bn(env, 0),
@@ -121,6 +137,7 @@ fn signals(
         nullifier1: bn(env, nf1),
         commitment0: fe(env, cm0 as u64 + 1000),
         commitment1: fe(env, cm1 as u64 + 2000),
+        currency_id: fe(env, currency_id as u64),
     }
 }
 
@@ -372,6 +389,7 @@ fn first_root_matches_offchain_reconstruction() {
         nullifier1: bn(&h.env, 2),
         commitment0: cm0.clone(),
         commitment1: cm1.clone(),
+        currency_id: fe(&h.env, 0),
     };
     h.client.transact(&valid_proof(&h.env), &s, &ext);
     let on_chain = h.client.current_root().to_array();
@@ -420,6 +438,108 @@ fn root_history_window_holds() {
     for r in roots.iter() {
         assert!(h.client.is_known_root(r), "root should still be known");
     }
+}
+
+// ── multi-currency (Phase 3) ────────────────────────────────────────────────
+
+/// A second SAC registered after init gets the next currency id, and the only
+/// change required is contract state (no new vkey / no upgrade).
+#[test]
+fn register_token_assigns_next_id() {
+    let h = setup();
+    assert_eq!(h.client.token_count(), 1, "init registers currency 0");
+    let admin2 = Address::generate(&h.env);
+    let sac2 = h.env.register_stellar_asset_contract_v2(admin2);
+    let id = h.client.register_token(&sac2.address());
+    assert_eq!(id, 1, "second token gets id 1");
+    assert_eq!(h.client.token_count(), 2);
+    assert_eq!(h.client.token(&1), Some(sac2.address()));
+}
+
+/// A transaction declaring an unregistered currency is rejected, even for a pure
+/// transfer (publicAmount == 0), so no "ghost"-currency notes can be minted.
+#[test]
+fn unknown_currency_rejected() {
+    let h = setup();
+    let ext = empty_ext(&h.env);
+    // currency 7 is not registered (only 0 exists).
+    let s = signals_cur(&h.env, &h.client.current_root(), &ext, 1, 2, 3, 4, 7);
+    let err = h
+        .client
+        .try_transact(&valid_proof(&h.env), &s, &ext)
+        .err()
+        .unwrap()
+        .unwrap();
+    assert_eq!(err, Error::UnknownCurrency);
+    assert_eq!(h.client.next_leaf_index(), 0, "no mutation on reject");
+}
+
+/// Deposit and withdraw settle the SAC of the transaction's currency, and each
+/// token's pool balance is independent of the others.
+#[test]
+fn per_currency_settlement_is_isolated() {
+    let h = setup(); // currency 0 = h.token
+
+    // register a second, independent SAC as currency 1
+    let admin2 = Address::generate(&h.env);
+    let sac2 = h.env.register_stellar_asset_contract_v2(admin2.clone());
+    let id1 = h.client.register_token(&sac2.address());
+    assert_eq!(id1, 1);
+    let token1_admin = StellarAssetClient::new(&h.env, &sac2.address());
+    let token1 = TokenClient::new(&h.env, &sac2.address());
+
+    let depositor = Address::generate(&h.env);
+    h.token_admin.mint(&depositor, &1000); // currency 0
+    token1_admin.mint(&depositor, &1000); // currency 1
+
+    // deposit 100 of currency 0
+    let ext0 = ext_with_settlement(&h.env, &depositor);
+    let mut s0 = signals_cur(&h.env, &h.client.current_root(), &ext0, 1, 2, 3, 4, 0);
+    s0.public_amount = fe(&h.env, 100);
+    h.client.transact(&valid_proof(&h.env), &s0, &ext0);
+
+    // deposit 250 of currency 1
+    let ext1 = ext_with_settlement(&h.env, &depositor);
+    let mut s1 = signals_cur(&h.env, &h.client.current_root(), &ext1, 5, 6, 7, 8, 1);
+    s1.public_amount = fe(&h.env, 250);
+    h.client.transact(&valid_proof(&h.env), &s1, &ext1);
+
+    assert_eq!(h.token.balance(&h.pool), 100, "pool holds 100 of currency 0");
+    assert_eq!(token1.balance(&h.pool), 250, "pool holds 250 of currency 1");
+
+    // withdraw 40 of currency 1 to a fresh recipient; currency 0 untouched
+    let recipient = Address::generate(&h.env);
+    let ext_w = ext_with_settlement(&h.env, &recipient);
+    let mut sw = signals_cur(&h.env, &h.client.current_root(), &ext_w, 9, 10, 11, 12, 1);
+    sw.public_amount = neg_fe(&h.env, 40);
+    h.client.transact(&valid_proof(&h.env), &sw, &ext_w);
+
+    assert_eq!(token1.balance(&recipient), 40, "recipient got 40 of currency 1");
+    assert_eq!(token1.balance(&h.pool), 210, "currency 1 pool now 210");
+    assert_eq!(h.token.balance(&h.pool), 100, "currency 0 pool unchanged");
+}
+
+/// register_token is admin-gated. With auth mocked the call succeeds; here we
+/// assert it fails to authorize when the admin has not approved it.
+#[test]
+fn register_token_requires_admin_auth() {
+    let env = Env::default();
+    let contract_id = env.register(VeilContract, ());
+    let client = VeilContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(admin.clone());
+    client.init(
+        &admin,
+        &Config { levels: LEVELS, root_history_size: ROOT_HISTORY },
+        &sac.address(),
+    );
+
+    // No auth mocked: an admin-gated call must fail to authorize.
+    let admin2 = Address::generate(&env);
+    let sac2 = env.register_stellar_asset_contract_v2(admin2);
+    let res = client.try_register_token(&sac2.address());
+    assert!(res.is_err(), "register_token must require admin auth");
+    assert_eq!(client.token_count(), 1, "no token added without admin auth");
 }
 
 /// A spend can target ANY root in the window, not just the latest (stale-root

@@ -169,7 +169,7 @@ Design (decided):
 | M3 | app crypto.ts mirror (hash4 + 76-byte plaintext), assert same vector | ✅ | crypto.test.ts 7/7; Poseidon(1,2,3,4) + note vectors match Rust; plaintext 76B round-trips with currencyId. witness.ts + rest of app land in M8 |
 | M4 | circuit: Poseidon(4) commitments + currencyId [7], fixture cross-check | ✅ | currencyId is public signal [7]; 4 commitments use Poseidon(4); 4/4 circom tests; note pipeline matches pinned width-4 vectors. zkey/vkey regen in M5 |
 | M5 | regenerate zkey/vkey -> vk.rs (NUM_PUBLIC=8, 9 IC points) | ✅ | vk.rs NUM_PUBLIC=8 IC=9; sample_proof.rs + transact_fixture.rs now 8 signals (currencyId at [7]); both proofs verify via snarkjs; generators use pos4 + currencyId |
-| M6 | contract: registry, admin-only register_token, currency validation + scoped settlement, errors, tests | ⏳ | UnknownCurrency=9, Unauthorized=10 |
+| M6 | contract: registry, admin-only register_token, currency validation + scoped settlement, errors, tests | ✅ | Token(u32)+TokenCount registry; register_token admin-gated (Unauthorized=10); transact rejects unregistered currency (UnknownCurrency=9); settlement uses Token(currency_id); 22/22 mock + 6/6 real-proof tests; wasm builds; clippy clean |
 | M7 | Rust SDK: thread currency_id through note/encrypt/tx/scan; e2e_prove | ⏳ | plaintext 72->76 |
 | M8 | app: currency selector, per-currency balances, per-token decimals; optional indexer column | ⏳ | read decimals/symbol via TokenClient |
 | M9 | docs + fresh testnet deploy; register a 2nd token to prove no vkey change | ⏳ | addresses.json currencies map + history |

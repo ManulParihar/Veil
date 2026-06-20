@@ -25,4 +25,9 @@ pub enum Error {
     InsufficientFunds = 7,
     /// `transact` (or any reader) was called before `init`.
     NotInitialized = 8,
+    /// The transaction's `currency_id` is not a registered token (or does not fit
+    /// in the u32 registry index range).
+    UnknownCurrency = 9,
+    /// A privileged call (e.g. `register_token`) was made by a non-admin.
+    Unauthorized = 10,
 }
