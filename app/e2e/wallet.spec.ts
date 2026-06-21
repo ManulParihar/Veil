@@ -12,7 +12,7 @@ test("deposit / transfer / withdraw real XLM (in-browser proofs, on-chain)", asy
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByTestId("create-btn")).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("create-btn").click();
   await expect(page.getByTestId("seed-display")).toBeVisible({ timeout: 30_000 });
@@ -23,20 +23,20 @@ test("deposit / transfer / withdraw real XLM (in-browser proofs, on-chain)", asy
   await expect(page.getByTestId("balance")).toContainText("0", { timeout: 30_000 });
 
   // ── DEPOSIT 2 XLM (real XLM pulled from the fee account into the pool) ──
-  await page.goto("/deposit");
+  await page.goto("/app/deposit");
   await page.getByTestId("deposit-amount").fill("2");
   await page.getByTestId("deposit-submit").click();
   await expect(page.getByTestId("tx-progress")).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/02-deposit-proving.png`, fullPage: true });
   await expect(page.getByTestId("tx-status")).toContainText("confirmed", { timeout: 150_000 });
   const depositHash = (await page.getByTestId("tx-hash").textContent()) || "";
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByTestId("balance")).toContainText("2", { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/03-balance-2xlm.png`, fullPage: true });
   console.log("DEPOSIT_TX:", depositHash.replace(/\s+/g, " ").trim());
 
   // ── WITHDRAW 0.4 XLM to the fee account (real XLM released from the pool) ──
-  await page.goto("/withdraw");
+  await page.goto("/app/withdraw");
   await page.getByText("To my fee account").click();
   await page.getByTestId("withdraw-amount").fill("0.4");
   await page.getByTestId("withdraw-submit").click();
@@ -46,7 +46,7 @@ test("deposit / transfer / withdraw real XLM (in-browser proofs, on-chain)", asy
   await page.screenshot({ path: `${SHOTS}/04-withdraw-confirmed.png`, fullPage: true });
 
   // shielded balance: 2 - 0.4 = 1.6
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByTestId("balance")).toContainText("1.6", { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/05-balance-1.6xlm.png`, fullPage: true });
   console.log("WITHDRAW_TX:", withdrawHash.replace(/\s+/g, " ").trim());

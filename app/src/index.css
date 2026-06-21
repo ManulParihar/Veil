@@ -13,44 +13,144 @@ body,
 }
 
 body {
-  @apply bg-veil-bg text-veil-text font-sans antialiased;
+  @apply bg-poof-bg text-poof-text font-sans antialiased;
+  /* Gold + lavender subtle magical background */
   background-image:
-    radial-gradient(60rem 60rem at 110% -10%, rgba(124, 92, 255, 0.12), transparent 60%),
-    radial-gradient(50rem 50rem at -10% 110%, rgba(34, 211, 238, 0.08), transparent 60%);
+    radial-gradient(65rem 65rem at 118% -12%, rgba(232, 213, 163, 0.12), transparent 65%),
+    radial-gradient(55rem 55rem at -12% 115%, rgba(167, 139, 250, 0.14), transparent 62%),
+    radial-gradient(40rem 40rem at 40% 85%, rgba(232, 90, 158, 0.08), transparent 70%);
   background-attachment: fixed;
 }
 
-/* thin custom scrollbar */
+/* thin custom scrollbar - gold tinted */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { @apply bg-veil-border rounded-full; }
+::-webkit-scrollbar-thumb { @apply bg-poof-border rounded-full; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Sparkle / poof particle styles */
+.spark {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #E8D5A3, #E85A9E, #A78BFA);
+  box-shadow: 0 0 8px rgba(232, 213, 163, 0.9);
+  animation: sparkle 700ms ease-out forwards;
+  will-change: transform, opacity;
+}
 
 @layer components {
   .card {
-    @apply bg-veil-card border border-veil-border rounded-2xl;
+    @apply bg-poof-card border border-poof-border rounded-2xl;
+  }
+  /* Frosted glass card — for hero / overlay surfaces above the smoke */
+  .glass {
+    @apply rounded-2xl border border-poof-border/70 bg-poof-card/60 backdrop-blur-xl;
   }
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-medium
-           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+           transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.985];
   }
   .btn-primary {
-    @apply btn bg-veil-primary hover:bg-veil-primaryhover text-white shadow-glow;
+    @apply btn bg-poof-gold text-poof-bg hover:bg-poof-goldHover shadow-glow font-semibold;
   }
   .btn-ghost {
-    @apply btn bg-veil-surface hover:bg-veil-border border border-veil-border text-veil-text;
+    @apply btn bg-poof-surface hover:bg-poof-border border border-poof-border text-poof-text hover:border-poof-gold/50;
   }
   .btn-secondary {
-    @apply btn bg-veil-surface hover:bg-veil-border border border-veil-primary/50 text-veil-text;
+    @apply btn bg-poof-surface hover:bg-poof-border border border-poof-lavender/50 text-poof-text;
   }
   .input {
-    @apply w-full bg-veil-surface border border-veil-border rounded-xl px-4 py-3
-           text-veil-text placeholder:text-veil-muted outline-none
-           focus:border-veil-primary focus:ring-2 focus:ring-veil-primary/30 transition;
+    @apply w-full bg-poof-surface border border-poof-border rounded-xl px-4 py-3
+           text-poof-text placeholder:text-poof-muted outline-none
+           focus:border-poof-gold focus:ring-2 focus:ring-poof-gold/30 transition;
   }
   .label {
-    @apply text-sm font-medium text-veil-muted mb-1.5 block;
+    @apply text-sm font-medium text-poof-muted mb-1.5 block;
   }
   .mono {
     @apply font-mono text-sm;
   }
+}
+
+/* Poof magic flourish on interactive elements */
+.poof-glow {
+  transition: box-shadow .2s ease;
+}
+.poof-glow:hover {
+  box-shadow: 0 0 0 1px rgba(232, 213, 163, 0.25), 0 10px 30px -10px rgba(232, 213, 163, 0.25);
+}
+
+/* Animated gold→lavender→pink gradient text — the "magic" wordmark treatment */
+.text-magic {
+  background-image: linear-gradient(100deg, #E8D5A3 0%, #A78BFA 38%, #E85A9E 62%, #E8D5A3 100%);
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  @apply animate-gradient-x;
+}
+
+/* The redesigned tx progress bar: a moving gold/lavender fill on an inky track */
+.poof-progress-track {
+  @apply h-2 w-full overflow-hidden rounded-full bg-poof-surface border border-poof-border/70;
+}
+.poof-progress-fill {
+  @apply h-full rounded-full;
+  background-image: linear-gradient(100deg, #E8D5A3, #A78BFA, #E85A9E, #E8D5A3);
+  background-size: 220% auto;
+  box-shadow: 0 0 16px -2px rgba(167, 139, 250, 0.6);
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  @apply animate-gradient-x;
+}
+
+/* Decorative smoke wisps (CSS-only fallback / accents) */
+.smoke-wisp {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(6px);
+  background: radial-gradient(circle, rgba(167,139,250,0.5), transparent 70%);
+  pointer-events: none;
+}
+
+/* Animated gradient border on hover */
+.glow-ring {
+  position: relative;
+}
+.glow-ring::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, #E8D5A3, #A78BFA, #E85A9E, #E8D5A3);
+  background-size: 300% 300%;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: gradient-x 6s ease infinite;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.glow-ring:hover::before {
+  opacity: 1;
+}
+
+/* Premium glow card with ambient radial pulse */
+.card-glow {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 60px -15px rgba(167, 139, 250, 0.15), 0 0 30px -10px rgba(232, 213, 163, 0.1);
+}
+.card-glow::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(167,139,250,0.06) 0%, transparent 60%);
+  animation: glow-pulse 3s ease-in-out infinite;
+  pointer-events: none;
 }

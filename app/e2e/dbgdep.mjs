@@ -1,11 +1,11 @@
 import { chromium } from "@playwright/test";
 const b = await chromium.launch(); const p = await b.newPage();
-await p.goto("http://localhost:4173/");
+await p.goto("http://localhost:4173/app");
 await p.getByTestId("create-btn").click();
 await p.getByTestId("seed-display").waitFor({timeout:30000});
 await p.getByTestId("fund-btn").click();
 await p.getByTestId("balance").waitFor({timeout:60000});
-await p.goto("http://localhost:4173/deposit");
+await p.goto("http://localhost:4173/app/deposit");
 await p.getByTestId("deposit-amount").fill("2");
 await p.getByTestId("deposit-submit").click();
 await p.waitForFunction(()=>/confirmed|failed/.test(document.querySelector('[data-testid="tx-status"]')?.textContent||""),{timeout:120000}).catch(()=>{});

@@ -39,9 +39,11 @@ export default function Withdraw() {
 
   return (
     <div className="max-w-md mx-auto space-y-6">
-      <div>
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-xl bg-poof-gold/15 grid place-items-center">
+          <svg className="h-5 w-5 text-poof-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7 7 7-7"/></svg>
+        </div>
         <h1 className="text-2xl font-bold">Withdraw</h1>
-        <p className="text-veil-muted text-sm">Unshield XLM to any Stellar account. The pool releases real testnet XLM; your spend stays private (only an unlinkable nullifier appears).</p>
       </div>
 
       <div className="card p-6 space-y-4">
@@ -53,7 +55,7 @@ export default function Withdraw() {
           <div className="label">Destination Stellar address</div>
           <input data-testid="withdraw-to" className="input mono text-sm" placeholder="G…" value={to} onChange={(e) => setTo(e.target.value)} />
           {feeAccount && (
-            <button onClick={() => setTo(feeAccount.publicKey)} className="mt-1 text-xs text-veil-primary hover:underline">
+            <button onClick={() => setTo(feeAccount.publicKey)} className="mt-1 text-xs text-poof-gold hover:underline">
               To my fee account
             </button>
           )}

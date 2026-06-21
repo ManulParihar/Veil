@@ -1,7 +1,9 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useWallet } from "./store/wallet";
 import { ToastProvider } from "./components/ui";
+import { SmokeBackground } from "./components/fx/SmokeBackground";
 import Layout from "./components/Layout";
+import Landing from "./pages/Landing";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Deposit from "./pages/Deposit";
@@ -9,6 +11,7 @@ import Send from "./pages/Send";
 import Withdraw from "./pages/Withdraw";
 import Receive from "./pages/Receive";
 import Activity from "./pages/Activity";
+import Privacy from "./pages/Privacy";
 
 export default function App() {
   const initialised = useWallet((s) => s.initialised);
@@ -20,17 +23,34 @@ export default function App() {
 
   return (
     <ToastProvider>
+      {/* Subtle drifting smoke behind the entire app — the "poof" never settles.
+          (Hidden behind the landing's opaque cream canvas at "/".) */}
+      <SmokeBackground className="fixed inset-0 -z-10" smokeColor="#A78BFA" opacity={0.12} />
       <Routes>
-        <Route path="/welcome" element={ready ? <Navigate to="/" replace /> : <Onboarding />} />
+        {/* Public marketing site */}
+        <Route path="/" element={<Landing />} />
+
+        {/* The wallet, gated behind an identity + funded fee account */}
+        <Route path="/app/welcome" element={ready ? <Navigate to="/app" replace /> : <Onboarding />} />
         <Route
-          path="/"
-          element={ready ? <Layout><Dashboard /></Layout> : <Navigate to="/welcome" replace state={{ from: loc }} />}
+          path="/app"
+          element={ready ? <Layout><Dashboard /></Layout> : <Navigate to="/app/welcome" replace state={{ from: loc }} />}
         />
-        <Route path="/deposit" element={ready ? <Layout><Deposit /></Layout> : <Navigate to="/welcome" replace />} />
-        <Route path="/send" element={ready ? <Layout><Send /></Layout> : <Navigate to="/welcome" replace />} />
-        <Route path="/withdraw" element={ready ? <Layout><Withdraw /></Layout> : <Navigate to="/welcome" replace />} />
-        <Route path="/receive" element={ready ? <Layout><Receive /></Layout> : <Navigate to="/welcome" replace />} />
-        <Route path="/activity" element={ready ? <Layout><Activity /></Layout> : <Navigate to="/welcome" replace />} />
+        <Route path="/app/deposit" element={ready ? <Layout><Deposit /></Layout> : <Navigate to="/app/welcome" replace />} />
+        <Route path="/app/send" element={ready ? <Layout><Send /></Layout> : <Navigate to="/app/welcome" replace />} />
+        <Route path="/app/withdraw" element={ready ? <Layout><Withdraw /></Layout> : <Navigate to="/app/welcome" replace />} />
+        <Route path="/app/receive" element={ready ? <Layout><Receive /></Layout> : <Navigate to="/app/welcome" replace />} />
+        <Route path="/app/activity" element={ready ? <Layout><Activity /></Layout> : <Navigate to="/app/welcome" replace />} />
+        <Route path="/app/privacy" element={ready ? <Layout><Privacy /></Layout> : <Navigate to="/app/welcome" replace />} />
+
+        {/* Legacy deep links → keep old bookmarks working */}
+        <Route path="/welcome" element={<Navigate to="/app/welcome" replace />} />
+        <Route path="/deposit" element={<Navigate to="/app/deposit" replace />} />
+        <Route path="/send" element={<Navigate to="/app/send" replace />} />
+        <Route path="/withdraw" element={<Navigate to="/app/withdraw" replace />} />
+        <Route path="/receive" element={<Navigate to="/app/receive" replace />} />
+        <Route path="/activity" element={<Navigate to="/app/activity" replace />} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ToastProvider>

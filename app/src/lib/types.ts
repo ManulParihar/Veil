@@ -4,11 +4,11 @@
 import type { Note } from "./crypto";
 import type { Signer } from "./signer";
 
-export const CONTRACT_ID = "CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4";
+export const CONTRACT_ID = "CBFNF4NH3HBQQX66OSSMV3RTPEPMICNGUQSEBG6LVME4543KODNOXJK6";
 /** Ledger the contract was deployed at — the start for a full event scan so the
  *  client Merkle tree includes leaf 0. (RPC retains ~7 days; once the contract is
  *  older than that, the durable indexer is required for full history.) */
-export const CONTRACT_START_LEDGER = 3187302;
+export const CONTRACT_START_LEDGER = 3205602;
 export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 export const RPC_URL = "https://soroban-testnet.stellar.org";
 export const FRIENDBOT = "https://friendbot.stellar.org";
@@ -44,6 +44,8 @@ export interface StoredNote {
   spent: boolean;
   /** Present when a decrypted/persisted note is visible but not spendable. */
   invalidReason?: string;
+  /** Encrypted private memo attached by the sender. */
+  memo?: string;
   /** when we first saw/created it (ms) */
   createdAt: number;
 }

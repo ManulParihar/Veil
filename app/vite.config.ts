@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
@@ -24,6 +25,11 @@ export default defineConfig({
     environment: "node",
     testTimeout: 60000,
     exclude: ["node_modules/**", "dist/**", "e2e/**"],
+  },
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
   },
   server: { port: 5173, host: true },
   preview: { port: 4173, host: true },

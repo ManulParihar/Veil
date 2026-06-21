@@ -1,17 +1,45 @@
-// Shared UI primitives for the Veil wallet.
+// Shared UI primitives for the Poof wallet — gold + lavender magic.
 import { useState, useCallback, createContext, useContext, ReactNode } from "react";
 
+/**
+ * Poof mark — a smoke puff curling up off a base line, where a coin used to be.
+ * Gold rim, lavender body, with sparkle dots that twinkle. Value, vanishing.
+ */
 export function Logo({ className = "h-7 w-7" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 32 32" fill="none">
+    <svg className={className} viewBox="0 0 32 32" fill="none" aria-hidden>
       <defs>
-        <linearGradient id="vg" x1="0" y1="0" x2="32" y2="32">
-          <stop stopColor="#7c5cff" />
-          <stop offset="1" stopColor="#22d3ee" />
+        <linearGradient id="pg-rim" x1="6" y1="6" x2="26" y2="28" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#E8D5A3" />
+          <stop offset="0.55" stopColor="#A78BFA" />
+          <stop offset="1" stopColor="#E85A9E" />
         </linearGradient>
+        <radialGradient id="pg-body" cx="0.5" cy="0.42" r="0.65">
+          <stop stopColor="#A78BFA" stopOpacity="0.45" />
+          <stop offset="1" stopColor="#A78BFA" stopOpacity="0.08" />
+        </radialGradient>
       </defs>
-      <path d="M16 2 4 8v8c0 7 5 12 12 14 7-2 12-7 12-14V8L16 2Z" stroke="url(#vg)" strokeWidth="2" fill="rgba(124,92,255,0.12)" />
-      <path d="M11 14l5 6 5-6" stroke="url(#vg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {/* the smoke puff */}
+      <path
+        d="M9.5 20.5c-2.8 0-4.5-1.9-4.2-4.3.2-1.9 1.8-3.2 3.6-3.2.2-2.6 2.3-4.7 5-4.7 1.9 0 3.6 1 4.5 2.6.6-.4 1.4-.6 2.2-.6 2.3 0 4.1 1.8 4.1 4.1 0 .3 0 .6-.1.9 1.5.4 2.6 1.8 2.6 3.4 0 1.9-1.6 3.5-3.6 3.5H9.5Z"
+        fill="url(#pg-body)"
+        stroke="url(#pg-rim)"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      {/* rising wisp */}
+      <path
+        d="M15 9.5c1-1.1.6-2.4-.3-3.1-.9-.7-1.1-1.6-.4-2.6"
+        stroke="url(#pg-rim)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* base line the puff lifted off */}
+      <path d="M9 24.5h14" stroke="#3F3852" strokeWidth="1.8" strokeLinecap="round" />
+      {/* sparkles */}
+      <circle cx="24.5" cy="8.5" r="1.5" fill="#E8D5A3" className="animate-sparkle" />
+      <circle cx="6.5" cy="10.5" r="1" fill="#E85A9E" className="animate-sparkle" style={{ animationDelay: "0.4s" }} />
     </svg>
   );
 }
@@ -31,10 +59,10 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
 
 export function StatCard({ label, value, sub, accent }: { label: string; value: ReactNode; sub?: ReactNode; accent?: boolean }) {
   return (
-    <div className={`card p-5 ${accent ? "shadow-glow border-veil-primary/40" : ""}`}>
-      <div className="text-sm text-veil-muted">{label}</div>
+    <div className={`card p-5 ${accent ? "shadow-glow border-poof-gold/40" : ""}`}>
+      <div className="text-sm text-poof-muted">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
-      {sub && <div className="mt-1 text-xs text-veil-muted">{sub}</div>}
+      {sub && <div className="mt-1 text-xs text-poof-muted">{sub}</div>}
     </div>
   );
 }
@@ -53,10 +81,10 @@ export function AddressBadge({ value, label, testid }: { value: string; label?: 
   };
   return (
     <button onClick={copy} data-testid={testid} title="Copy"
-      className="group inline-flex items-center gap-2 rounded-lg bg-veil-surface border border-veil-border px-3 py-1.5 mono hover:border-veil-primary transition">
-      {label && <span className="text-veil-muted not-italic">{label}</span>}
-      <span className="text-veil-text">{truncate(value)}</span>
-      <span className={`text-xs ${copied ? "text-veil-success" : "text-veil-muted group-hover:text-veil-primary"}`}>
+      className="group inline-flex items-center gap-2 rounded-lg bg-poof-surface border border-poof-border px-3 py-1.5 mono hover:border-poof-gold transition poof-glow">
+      {label && <span className="text-poof-muted not-italic">{label}</span>}
+      <span className="text-poof-text">{truncate(value)}</span>
+      <span className={`text-xs ${copied ? "text-poof-success" : "text-poof-muted group-hover:text-poof-gold"}`}>
         {copied ? "copied" : "copy"}
       </span>
     </button>
@@ -67,7 +95,7 @@ export function AddressBadge({ value, label, testid }: { value: string; label?: 
 export function ExplorerLink({ url, label = "explorer", testid }: { url: string; label?: string; testid?: string }) {
   return (
     <a href={url} target="_blank" rel="noreferrer" data-testid={testid} title="View on Stellar Expert"
-      className="inline-flex items-center gap-1 rounded-lg border border-veil-border px-2.5 py-1.5 text-xs text-veil-accent hover:border-veil-primary transition">
+      className="inline-flex items-center gap-1 rounded-lg border border-poof-border px-2.5 py-1.5 text-xs text-poof-gold hover:border-poof-gold transition">
       {label} ↗
     </a>
   );
@@ -91,7 +119,7 @@ export function SecretReveal({ value, testid }: { value: string; testid?: string
       <div
         data-testid={testid}
         data-revealed={shown}
-        className="mono text-sm break-all bg-veil-surface rounded-xl p-3 border border-veil-border select-all"
+        className="mono text-sm break-all bg-poof-surface rounded-xl p-3 border border-poof-border select-all"
       >
         {shown ? value : masked}
       </div>
@@ -99,14 +127,14 @@ export function SecretReveal({ value, testid }: { value: string; testid?: string
         <button
           onClick={() => setShown((v) => !v)}
           data-testid={testid ? `${testid}-reveal` : undefined}
-          className="rounded-lg border border-veil-border px-3 py-1.5 text-xs text-veil-muted hover:border-veil-primary hover:text-veil-text transition"
+          className="rounded-lg border border-poof-border px-3 py-1.5 text-xs text-poof-muted hover:border-poof-gold hover:text-poof-text transition"
         >
           {shown ? "Hide" : "Reveal"}
         </button>
         <button
           onClick={copy}
           data-testid={testid ? `${testid}-copy` : undefined}
-          className={`rounded-lg border border-veil-border px-3 py-1.5 text-xs transition hover:border-veil-primary ${copied ? "text-veil-success" : "text-veil-muted hover:text-veil-text"}`}
+          className={`rounded-lg border border-poof-border px-3 py-1.5 text-xs transition hover:border-poof-gold ${copied ? "text-poof-success" : "text-poof-muted hover:text-poof-text"}`}
         >
           {copied ? "copied" : "copy"}
         </button>
@@ -132,10 +160,10 @@ export function AmountInput({ value, onChange, max, unit = "XLM", testid }: { va
           value={value}
           onChange={(e) => onChange(sanitize(e.target.value))}
         />
-        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-veil-muted font-medium">{unit}</span>
+        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-poof-muted font-medium">{unit}</span>
       </div>
       {max !== undefined && (
-        <button onClick={() => onChange(max)} className="mt-1.5 text-xs text-veil-primary hover:underline">
+        <button onClick={() => onChange(max)} className="mt-1.5 text-xs text-poof-gold hover:underline">
           Max: {max} {unit}
         </button>
       )}
@@ -146,9 +174,9 @@ export function AmountInput({ value, onChange, max, unit = "XLM", testid }: { va
 export function EmptyState({ title, sub, icon }: { title: string; sub?: string; icon?: ReactNode }) {
   return (
     <div className="card p-10 text-center">
-      <div className="mx-auto mb-3 text-veil-muted">{icon}</div>
+      <div className="mx-auto mb-3 text-poof-muted">{icon}</div>
       <div className="font-medium">{title}</div>
-      {sub && <div className="text-sm text-veil-muted mt-1">{sub}</div>}
+      {sub && <div className="text-sm text-poof-muted mt-1">{sub}</div>}
     </div>
   );
 }
@@ -172,7 +200,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((t) => (
           <div key={t.id} data-testid="toast"
             className={`animate-fade-in card px-4 py-3 text-sm shadow-glow border-l-4 ${
-              t.kind === "ok" ? "border-l-veil-success" : t.kind === "err" ? "border-l-veil-danger" : "border-l-veil-primary"
+              t.kind === "ok" ? "border-l-poof-success" : t.kind === "err" ? "border-l-poof-danger" : "border-l-poof-gold"
             }`}>
             {t.msg}
           </div>
@@ -184,11 +212,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 export function StatusChip({ status }: { status: string }) {
   const map: Record<string, string> = {
-    success: "bg-veil-success/15 text-veil-success",
-    error: "bg-veil-danger/15 text-veil-danger",
-    building: "bg-veil-warn/15 text-veil-warn",
-    proving: "bg-veil-primary/15 text-veil-primary",
-    submitting: "bg-veil-accent/15 text-veil-accent",
+    success: "bg-poof-success/15 text-poof-success",
+    error: "bg-poof-danger/15 text-poof-danger",
+    building: "bg-poof-warn/15 text-poof-warn",
+    proving: "bg-poof-lavender/15 text-poof-lavender",
+    submitting: "bg-poof-gold/15 text-poof-gold",
   };
-  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${map[status] ?? "bg-veil-border text-veil-muted"}`}>{status}</span>;
+  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${map[status] ?? "bg-poof-border text-poof-muted"}`}>{status}</span>;
 }

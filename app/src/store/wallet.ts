@@ -496,7 +496,7 @@ export const useWallet = create<Internal>()(
       };
     },
     {
-      name: "veil-wallet",
+      name: "poof-wallet",
       storage,
       partialize: (s) => ({
         initialised: s.initialised, seedHex: s.seedHex, address: s.address,

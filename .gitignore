@@ -8,3 +8,11 @@ circuits/node_modules
 *.r1cs
 !circuits/build/verification_key.json
 .DS_Store
+
+# local runtime / tooling artifacts
+.playwright-mcp/
+*.db
+*.db-shm
+*.db-wal
+circuits/*.sym
+/veil-*.png

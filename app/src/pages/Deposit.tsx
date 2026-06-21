@@ -57,9 +57,11 @@ export default function Deposit() {
 
   return (
     <div className="max-w-md mx-auto space-y-6">
-      <div>
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-xl bg-poof-success/15 grid place-items-center">
+          <svg className="h-5 w-5 text-poof-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        </div>
         <h1 className="text-2xl font-bold">Deposit</h1>
-        <p className="text-veil-muted text-sm">Shield real testnet XLM. Your fee account's XLM is pulled into the pool and a private note is minted — proven in your browser, verified on-chain.</p>
       </div>
 
       <div className="card p-6 space-y-4">
@@ -91,15 +93,10 @@ export default function Deposit() {
           {busy ? <><Spinner /> Working…</> : "Deposit privately"}
         </button>
         {!canDeposit && (
-          <p data-testid="deposit-unsupported" className="text-xs text-veil-warn">
-            Your connected wallet can't authorize Soroban deposits. Send, withdraw and
-            the faucet still work — to deposit, connect Freighter or xBull.
+          <p data-testid="deposit-unsupported" className="text-xs text-poof-warn">
+            Connect Freighter or xBull to deposit.
           </p>
         )}
-        <p className="text-xs text-veil-muted">
-          Real testnet XLM is custodied by the pool contract. Withdraw any time to a
-          Stellar address — the amount and recipient stay private until then.
-        </p>
       </div>
 
       {tx && <TxProgress tx={tx} />}
