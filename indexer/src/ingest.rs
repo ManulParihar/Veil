@@ -1,7 +1,7 @@
 //! The ingest loop, abstracted over an [`EventSource`] so it is fully testable
 //! without a live network.
 //!
-//! Invariants (CLAUDE.md Part 3, indexer edge cases):
+//! Indexer invariants:
 //! - **Checkpoint/resume**: a restart picks up from `store.checkpoint()`; never
 //!   re-walks ledgers it already finalized, never leaves gaps.
 //! - **Finality lag**: only ledgers `<= latest - lag` are ingested, so a reorg
@@ -12,9 +12,9 @@
 use std::sync::Arc;
 
 use crate::store::Store;
-use crate::types::{LedgerEvent, VeilEvent};
+use crate::types::{LedgerEvent, PoofEvent};
 
-/// A source of Veil contract events. Implemented by [`MockSource`] (tests) and
+/// A source of Poof contract events. Implemented by [`MockSource`] (tests) and
 /// `StellarRpcSource` (real `getEvents` poller).
 pub trait EventSource {
     /// Fetch all events in ledgers `[from_ledger, latest]` (inclusive). The
@@ -79,7 +79,7 @@ pub fn ingest_once(
 /// Persist a single finalized event.
 fn apply_event(store: &Store, le: &LedgerEvent) -> anyhow::Result<()> {
     match &le.event {
-        VeilEvent::NewCommitment {
+        PoofEvent::NewCommitment {
             cm,
             leaf_index,
             ciphertext,
@@ -93,13 +93,13 @@ fn apply_event(store: &Store, le: &LedgerEvent) -> anyhow::Result<()> {
                 ledger: le.ledger,
             })?;
         }
-        VeilEvent::Nullifier { nf } => {
+        PoofEvent::Nullifier { nf } => {
             store.upsert_nullifier(&crate::types::NullifierRow {
                 nf: nf.clone(),
                 ledger: le.ledger,
             })?;
         }
-        VeilEvent::Transact { root } => {
+        PoofEvent::Transact { root } => {
             store.set_root(root, le.ledger)?;
         }
     }
@@ -154,7 +154,7 @@ mod tests {
                 tip: std::sync::Mutex::new(tip),
             }
         }
-        fn push(&self, ledger: u64, event: VeilEvent) {
+        fn push(&self, ledger: u64, event: PoofEvent) {
             self.events.lock().unwrap().push(LedgerEvent { ledger, event });
         }
         fn set_tip(&self, t: u64) {
@@ -178,8 +178,8 @@ mod tests {
         }
     }
 
-    fn nc(cm: &str, idx: u32) -> VeilEvent {
-        VeilEvent::NewCommitment {
+    fn nc(cm: &str, idx: u32) -> PoofEvent {
+        PoofEvent::NewCommitment {
             cm: cm.into(),
             leaf_index: idx,
             ciphertext: "ab".into(),
@@ -213,9 +213,9 @@ mod tests {
     fn checkpoint_resume_has_no_gaps_or_dupes() {
         let src = MockSource::new(30); // safe_tip = 25 with lag 5
         src.push(1, nc("a", 0));
-        src.push(2, VeilEvent::Nullifier { nf: "nfa".into() });
+        src.push(2, PoofEvent::Nullifier { nf: "nfa".into() });
         src.push(10, nc("b", 1));
-        src.push(20, VeilEvent::Transact { root: "r1".into() });
+        src.push(20, PoofEvent::Transact { root: "r1".into() });
 
         // First run on one store handle.
         let store = Arc::new(Store::in_memory().unwrap());
@@ -247,8 +247,8 @@ mod tests {
         let src = MockSource::new(100); // generous tip, everything final
         src.push(1, nc("cm0", 0));
         src.push(1, nc("cm1", 1));
-        src.push(1, VeilEvent::Nullifier { nf: "nf0".into() });
-        src.push(1, VeilEvent::Transact { root: "root0".into() });
+        src.push(1, PoofEvent::Nullifier { nf: "nf0".into() });
+        src.push(1, PoofEvent::Transact { root: "root0".into() });
 
         let n = ingest_once(&store, &src, 5).unwrap();
         assert_eq!(n, 4);

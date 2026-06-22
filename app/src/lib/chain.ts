@@ -1,6 +1,6 @@
 // Soroban integration: submit `transact`, read contract state, scan events.
 // Uses @stellar/stellar-sdk against testnet RPC. The fee-payer is a plain
-// Stellar account (separate from the Veil identity) that signs/pays.
+// Stellar account (separate from the Poof identity) that signs/pays.
 import {
   rpc, Contract, TransactionBuilder, Keypair, Account, xdr, nativeToScVal,
   scValToNative, Address, Operation, Asset,
@@ -267,7 +267,7 @@ export async function getNewCommitments(startLedger?: number): Promise<Commitmen
   // Start from the contract's deploy ledger so the tree includes leaf 0 — a fixed
   // recent window misses the earliest commitments and corrupts the whole tree
   // (wrong leaf indices → wrong root). Clamp to RPC retention; if the contract is
-  // older than retention, full history needs the durable indexer (PLANE 4b).
+  // older than retention, full history needs the durable indexer.
   let from = startLedger ?? CONTRACT_START_LEDGER;
   const LIMIT = 200;
   const out: CommitmentEvent[] = [];

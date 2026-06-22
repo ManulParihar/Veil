@@ -282,7 +282,7 @@ export default function Landing() {
           The proof is the <span className="pl-emph-blue">authority</span> — not a decoration.
         </h2>
         <p className="pl-body" style={{ marginTop: 16 }}>
-          Veil-grade ZK isn't bolted on for show. At the contract boundary there are no values,
+          Poof-grade ZK isn't bolted on for show. At the contract boundary there are no values,
           owners, or notes — only commitments, nullifiers, a root, and a proof. Strip the proof
           and anyone could mint or steal. We keep it load-bearing.
         </p>

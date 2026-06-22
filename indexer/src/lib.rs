@@ -1,11 +1,11 @@
-//! Veil indexer (PLANE 4b).
+//! Poof indexer.
 //!
 //! Stellar RPC forgets contract events in ≤7 days. This service permanently
-//! ingests the Veil pool's `NewCommitment` (so recipients can scan for incoming
+//! ingests the Poof pool's `NewCommitment` (so recipients can scan for incoming
 //! notes), `Nullifier` (spend-state checks), and `Transact` (latest root)
 //! events into SQLite, and serves them over HTTP for client scanning.
 //!
-//! Design (CLAUDE.md Part 9 / Part 3): boring and reliable — checkpoint/resume,
+//! Design: checkpoint/resume,
 //! idempotent upserts, finality lag to survive reorgs. The ingest loop is
 //! abstracted over an [`ingest::EventSource`] so the whole pipeline is testable
 //! against a mock without a live network.

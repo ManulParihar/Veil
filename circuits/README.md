@@ -1,4 +1,4 @@
-# Veil Circuits (PLANE 2)
+# Poof Circuits
 
 The 2-input / 2-output Groth16 joinsplit over BN254.
 
@@ -17,7 +17,7 @@ The 2-input / 2-output Groth16 joinsplit over BN254.
   `[root, publicAmount, extDataHash, inputNullifier[2], outputCommitment[2], currencyId]`.
 - ptau power: **15** (2^15 = 32768 ≥ constraint count).
 
-## Constraints enforced (CLAUDE.md Part 7)
+## Constraints enforced
 ownership (`pk = Poseidon(sk)`), commitment well-formedness, signature +
 nullifier derivation, Merkle membership **gated on `amount > 0`** (dummy inputs
 skip), 64-bit range checks on every input/output amount, `nf[0] != nf[1]`,
@@ -28,7 +28,7 @@ input/output note in a joinsplit to one asset.
 
 ## Cross-impl gate
 `test/transaction.test.js` asserts the in-circuit `pk/cm/nf` equal the pinned
-`veil-crypto` vectors (`INTERFACES.md` §0). This proves the circuit's Poseidon is
+`poof-crypto` vectors (`INTERFACES.md` §0). This proves the circuit's Poseidon is
 bit-identical to the Rust single source of truth — the make-or-break seam.
 
 ## Reproduce
@@ -45,7 +45,7 @@ bash scripts/prove.sh build/sample_input.json   # real proof, verifies OK
 
 ## Handoff to the contract
 `build/verification_key.json` (snarkjs, groth16/bn128, nPublic 8, IC len 9) is
-converted to `crates/veil-contract/src/vk.rs` at integration. snarkjs encodes G1
+converted to `crates/poof-contract/src/vk.rs` at integration. snarkjs encodes G1
 as `[x, y, 1]` and G2 as `[[x_c0, x_c1], [y_c0, y_c1], [1,0]]` (decimal strings);
 the contract must map coordinate ordering to what `soroban_sdk::crypto::bn254`
 expects — confirmed during integration.

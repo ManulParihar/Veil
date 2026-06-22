@@ -1651,6 +1651,64 @@ dependencies = [
 ]
 
 [[package]]
+name = "poof-contract"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "poof-crypto",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "poof-crypto"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ff",
+ "hex",
+ "light-poseidon",
+]
+
+[[package]]
+name = "poof-indexer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "hex",
+ "http-body-util",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber 0.3.23",
+]
+
+[[package]]
+name = "poof-sdk"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ff",
+ "chacha20poly1305",
+ "hex",
+ "hkdf",
+ "poof-crypto",
+ "rand 0.8.6",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tiny-keccak",
+ "x25519-dalek",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2873,64 +2931,6 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
-
-[[package]]
-name = "veil-contract"
-version = "0.1.0"
-dependencies = [
- "hex",
- "soroban-sdk",
- "veil-crypto",
-]
-
-[[package]]
-name = "veil-crypto"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ff",
- "hex",
- "light-poseidon",
-]
-
-[[package]]
-name = "veil-indexer"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64",
- "hex",
- "http-body-util",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber 0.3.23",
-]
-
-[[package]]
-name = "veil-sdk"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ff",
- "chacha20poly1305",
- "hex",
- "hkdf",
- "rand 0.8.6",
- "rand_chacha 0.3.1",
- "serde",
- "serde_json",
- "sha2",
- "tiny-keccak",
- "veil-crypto",
- "x25519-dalek",
-]
 
 [[package]]
 name = "version_check"

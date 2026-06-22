@@ -1,8 +1,8 @@
-# Veil Project Overview
+# Poof Project Overview
 
-## What Veil Is
+## What Poof Is
 
-Veil is a UTXO-style private payment protocol on Stellar/Soroban.
+Poof is a UTXO-style private payment protocol on Stellar/Soroban.
 
 It works like a shielded pool:
 
@@ -11,7 +11,7 @@ It works like a shielded pool:
 - On-chain, each note appears only as a Poseidon commitment in a Merkle tree.
 - Spending a note reveals a nullifier and a Groth16 proof, not the note itself.
 
-In plain language: Veil tries to let users transfer value without publicly revealing which note they spent, how much it was worth, or who owns it.
+In plain language: Poof tries to let users transfer value without publicly revealing which note they spent, how much it was worth, or who owns it.
 
 ## The Main Problem It Solves
 
@@ -22,7 +22,7 @@ Normal blockchain transfers are easy to trace:
 - amount is visible,
 - transaction history is linkable.
 
-Veil hides the private payment state by replacing visible account balances with hidden notes.
+Poof hides the private payment state by replacing visible account balances with hidden notes.
 
 An observer sees:
 
@@ -62,11 +62,11 @@ Important simplifications:
 - Relayers are not implemented, so the fee-payer can still reveal who submitted the transaction.
 - Viewing-key delegation exists in the key hierarchy but is not fully used.
 
-## The Four Main Planes
+## The Main Components
 
 ## 1. Crypto Core
 
-Path: `crates/veil-crypto`
+Path: `crates/poof-crypto`
 
 This is the source of truth for:
 
@@ -95,7 +95,7 @@ The circuit produces Groth16 proofs.
 
 ## 3. Contract
 
-Path: `crates/veil-contract`
+Path: `crates/poof-contract`
 
 The Soroban contract is the authority.
 
@@ -112,7 +112,7 @@ It:
 
 Paths:
 
-- `crates/veil-sdk`
+- `crates/poof-sdk`
 - `indexer/`
 
 The SDK handles wallet-side logic:
@@ -128,7 +128,7 @@ The indexer persists events because Stellar RPC event history is temporary.
 
 ## Core Mental Model
 
-Think of Veil as a private UTXO system:
+Think of Poof as a private UTXO system:
 
 ```text
 Private note secret

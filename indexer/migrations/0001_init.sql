@@ -1,4 +1,4 @@
--- Veil indexer schema (PLANE 4b). Mirrors CLAUDE.md Part 9.
+-- Poof indexer schema.
 -- All field elements (cm, nf) are stored as 64-char lowercase hex of the
 -- 32-byte big-endian wire encoding (INTERFACES.md §1), used as TEXT primary keys.
 -- ciphertext is stored as hex of the raw AEAD blob.

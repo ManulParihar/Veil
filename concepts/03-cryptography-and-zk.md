@@ -6,7 +6,7 @@ What it is:
 
 BN254 is an elliptic-curve pairing family commonly used by Groth16 proving systems.
 
-Veil uses the BN254 scalar field for:
+Poof uses the BN254 scalar field for:
 
 - Poseidon inputs and outputs,
 - commitments,
@@ -32,7 +32,7 @@ Why this matters:
 
 ZK circuits are expensive when they must prove SHA-256 or Keccak computations. Poseidon uses field arithmetic, which circuits handle more cheaply.
 
-How Veil uses it:
+How Poof uses it:
 
 - `pk = Poseidon(sk)`
 - note commitments,
@@ -47,7 +47,7 @@ The circuit must recompute these hashes. Poseidon keeps the circuit smaller than
 
 Specific repository choice:
 
-Veil uses original circomlib Poseidon over BN254, not Poseidon2.
+Poof uses original circomlib Poseidon over BN254, not Poseidon2.
 
 Why:
 
@@ -63,11 +63,11 @@ Alternatives:
 - MiMC: ZK-friendly, but less favored than Poseidon in many newer designs.
 - Poseidon2: likely faster/newer, but would need careful cross-implementation validation.
 
-## Commitments In Veil
+## Commitments In Poof
 
 A commitment hides note data.
 
-In Veil:
+In Poof:
 
 ```text
 commitment = Poseidon(amount, pk, blinding)
@@ -84,11 +84,11 @@ The spender can prove in ZK that:
 
 The contract does not learn those hidden values.
 
-## Nullifiers In Veil
+## Nullifiers In Poof
 
 A nullifier prevents double spending without revealing which note was spent.
 
-Veil computes:
+Poof computes:
 
 ```text
 signature = Poseidon(sk, commitment, pathIndex)
@@ -115,7 +115,7 @@ Groth16 is a zkSNARK proving system.
 
 It creates short proofs and has fast verification, but it requires a trusted setup for each circuit.
 
-Why Veil uses it:
+Why Poof uses it:
 
 - Circom and `snarkjs` support it well.
 - Proofs are small.
@@ -165,7 +165,7 @@ BN254 field arithmetic wraps around modulo the field prime.
 
 Without range checks, someone could exploit modular arithmetic to make invalid value equations appear valid.
 
-How Veil uses them:
+How Poof uses them:
 
 Every input and output amount is checked as a 64-bit value using `Num2Bits(64)`.
 
@@ -185,7 +185,7 @@ The circuit does not check the contents of `ExtData`. It only includes `extDataH
 
 ## Privacy Limits
 
-Veil hides note links and amounts inside the shielded pool, but it does not hide everything.
+Poof hides note links and amounts inside the shielded pool, but it does not hide everything.
 
 Known leaks:
 

@@ -1,6 +1,6 @@
 //! Read API (axum) for client scanning and spend-state checks.
 //!
-//! Routes (CLAUDE.md Part 9):
+//! Read API routes:
 //! - `GET /notes?since_index=N`  → `[{cm, idx, ct, view_tag}]`
 //! - `GET /nullifiers?since=L`   → `[{nf}]`
 //! - `GET /tree/root`            → `{root, ledger}` or 501 if none recorded yet

@@ -133,7 +133,7 @@ function assertSpendable(sk: bigint, inputNote: Note): void {
   const owner = hash1(sk);
   if (owner !== inputNote.pubkey) {
     // eslint-disable-next-line no-console
-    console.warn("[veil] note not spendable by this identity", {
+    console.warn("[poof] note not spendable by this identity", {
       noteOwnerPubkey: inputNote.pubkey.toString(),
       thisIdentityPubkey: owner.toString(),
       currencyId: inputNote.currencyId,

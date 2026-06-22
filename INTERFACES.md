@@ -1,17 +1,17 @@
-# Veil — Frozen Cross-Plane Interfaces
+# Poof — Frozen Cross-Component Interfaces
 
-Every plane (circuit, contract, SDK, indexer) MUST conform to the contracts
+Every component (circuit, contract, SDK, indexer) MUST confirm to the contracts
 below. These are frozen. If you believe one is wrong, STOP and flag it — do not
 silently diverge, because divergence here means the system compiles and tests
 green in isolation but fails at integration.
 
 ## 0. The single source of crypto truth
 
-`crates/veil-crypto` is authoritative for Poseidon and all note math. Do NOT
+`crates/poof-crypto` is authoritative for Poseidon and all note math. Do NOT
 reimplement Poseidon anywhere. The contract depends on it with
 `default-features = false` (no_std); the SDK/indexer with default features.
 
-Locked facts (verified in `crates/veil-crypto/tests/cross_impl.rs`):
+Locked facts (verified in `crates/poof-crypto/tests/cross_impl.rs`):
 - Hash: original **circomlib Poseidon over BN254**, via `light-poseidon` 0.4 in
   Rust and `circomlib/circuits/poseidon.circom` in circom. `new_circom(n)` ↔
   circom `Poseidon(n)`.
@@ -41,7 +41,7 @@ Empty Merkle leaf `Zero(0) = Poseidon(0)` (width 1). `Zero(i+1) = Poseidon(Zero(
 ## 1. Field / byte encoding
 All field elements on the wire are **32-byte big-endian**, reduced mod the
 BN254 scalar field `r`. Contract `BytesN<32>` ↔ SDK `[u8;32]` ↔ snarkjs decimal
-string, all via `veil-crypto::field`.
+string, all via `poof-crypto::field`.
 
 ## 2. Tree
 - Depth (levels) = **20**. Capacity 2^20 leaves.
@@ -75,10 +75,10 @@ extDataHash = keccak256( recipient(32) || relayer(32) || fee_be(16) ||
                          viewTag[0](1) || viewTag[1](1) ||
                          u32be_len(settlementStrkey) || settlementStrkey(ascii) ) mod r
 ```
-- `settlement_address` (Phase 2): the Stellar strkey ("G…") of the deposit/withdraw
+- `settlement_address`: the Stellar strkey ("G...") of the deposit/withdraw
   counterparty, appended as `u32-be length || ASCII bytes`. Binds the withdraw
   recipient so a relayer can't redirect funds. For a pure transfer
-  (publicAmount==0) it is unused on-chain but still hashed — pass a fixed address.
+  (publicAmount==0) it is unused on-chain but still hashed; pass a fixed address.
   Contract appends `settlement_address.to_string()`; clients append the strkey ASCII.
 - `recipient`, `relayer`: 32-byte Stellar address bytes (right-pad/encode
   consistently; for MVP use the 32-byte Ed25519 public key of the account).
@@ -131,11 +131,11 @@ pairing_check([-A, alpha, vk_x, C], [B, beta, gamma, delta]) == true
 ```
 Negate A (or use the negate-on-one-side convention) consistently.
 
-### VK / proof serialization (circuits → contract handoff)
-The circuits plane produces `verification_key.json` (snarkjs). It will be
-converted to a Rust module `crates/veil-contract/src/vk.rs` exposing the VK as
+### VK / proof serialization (circuits -> contract handoff)
+The circuits component produces `verification_key.json` (snarkjs). It will be
+converted to a Rust module `crates/poof-contract/src/vk.rs` exposing the VK as
 BN254 affine point byte arrays (G1 = 64 bytes x||y big-endian uncompressed, G2 =
-128 bytes). The contract agent: build `verifier.rs` to consume a `Vk` struct of
+128 bytes). The contract verifier consumes a `Vk` struct of
 this shape and a `Proof { a: G1, b: G2, c: G1 }`; read the actual constants from
 `vk.rs`. A placeholder `vk.rs` with zeroed points is fine until integration —
 keep the parsing/format exactly as specified so the real VK drops in cleanly.

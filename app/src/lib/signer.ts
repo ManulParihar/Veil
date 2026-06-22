@@ -107,10 +107,10 @@ export class WalletKitSigner implements Signer {
 // Fixed payload the wallet signs to derive the shielded identity. It must never
 // change, or existing wallet identities would derive a different seed.
 const IDENTITY_MESSAGE =
-  "Veil — sign to derive your private shielded identity. This is not a transaction and costs nothing.";
+  "Poof — sign to derive your private shielded identity. This is not a transaction and costs nothing.";
 
 /**
- * Derive a deterministic 32-byte Veil seed from a wallet's signature over a
+ * Derive a deterministic 32-byte Poof seed from a wallet's signature over a
  * fixed payload. Stellar ed25519 signatures are deterministic, so the same
  * wallet account always yields the same seed — reconnecting (even on a new
  * device) restores the same shielded notes. No recovery-seed UI is needed.

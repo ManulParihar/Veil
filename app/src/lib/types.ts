@@ -1,4 +1,4 @@
-// Shared domain types for the Veil wallet — the contract between the data layer
+// Shared domain types for the Poof wallet — the contract between the data layer
 // (lib/, store/) and the presentation layer (pages/, components/).
 
 import type { Note } from "./crypto";
@@ -68,15 +68,15 @@ export interface TxRecord {
   stage?: string;
 }
 
-/** The fee-paying Stellar account (separate from the Veil identity). */
+/** The fee-paying Stellar account (separate from the Poof identity). */
 export interface FeeAccount {
   publicKey: string; // G...
   secret: string; // S...
   funded: boolean;
 }
 
-/** Public Veil address others send to: pubkey + x25519 enc pubkey. */
-export interface VeilAddress {
+/** Public Poof address others send to: pubkey + x25519 enc pubkey. */
+export interface PoofAddress {
   pubkey: string; // decimal field element
   encPub: string; // hex 32 bytes
 }
@@ -97,7 +97,7 @@ export interface WalletState {
   // identity / accounts
   initialised: boolean;
   seedHex: string | null;
-  address: VeilAddress | null;
+  address: PoofAddress | null;
   feeAccount: FeeAccount | null;
 
   // signer: "local" = seed-derived in-browser Keypair; "wallet" = connected
@@ -153,7 +153,7 @@ export interface WalletState {
   send: (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => Promise<TransactResult>;
   deposit: (currencyId: number, amount: bigint) => Promise<TransactResult>;
   withdraw: (currencyId: number, amount: bigint, toStellar: string) => Promise<TransactResult>;
-  /** demo helper: create a self-note via a real on-chain transact (Phase-1 mechanics) */
+  /** Demo helper: create a self-note via a real on-chain private transfer. */
   selfMintDemo: (currencyId: number, amount: bigint) => Promise<TransactResult>;
   /** testnet faucet: drip a custom asset (e.g. VUSD) to the fee account so it can
    *  then be deposited. Establishes the trustline if missing. Returns the tx hash. */

@@ -2,7 +2,7 @@
 
 ## Big Picture
 
-Veil is split into separate planes so each part has a clear job.
+Poof is split into separate components so each part has a clear job.
 
 ```text
 SDK / Wallet
@@ -22,7 +22,7 @@ The most important architectural rule is that Poseidon and note math must match 
 
 If the SDK, circuit, and contract disagree about even one hash input order, the system breaks.
 
-## Plane 1: `veil-crypto`
+## Crypto: `poof-crypto`
 
 This crate defines the shared cryptographic formulas.
 
@@ -46,7 +46,7 @@ Why this approach was chosen:
 - Keeping the Rust implementation in one crate reduces the risk of hash mismatches.
 - The circuit still uses Circom's Poseidon template, so tests pin cross-implementation vectors.
 
-## Plane 2: Circuits
+## Circuits
 
 The circuit is a 2-input / 2-output joinsplit.
 
@@ -72,7 +72,7 @@ Why this matters:
 - The verification key is generated for exactly this public input order.
 - The contract must pass the same order into Groth16 verification.
 
-## Plane 3: Soroban Contract
+## Soroban Contract
 
 The contract has one main mutating call: `transact`.
 
@@ -106,7 +106,7 @@ Why this design matters:
 - Failed transactions do not burn nullifiers.
 - Double spends are blocked by persistent nullifier entries.
 
-## Plane 4a: SDK
+## SDK
 
 The SDK is the wallet-side library.
 
@@ -130,7 +130,7 @@ The current wallet transfer builder uses:
 
 The circuit can handle two real inputs, but this wallet selection logic is simpler for the MVP.
 
-## Plane 4b: Indexer
+## Indexer
 
 The indexer watches contract events and stores them in SQLite.
 

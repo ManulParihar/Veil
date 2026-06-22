@@ -1,4 +1,4 @@
-// THE browser crypto gate: assert TS crypto is bit-identical to veil-crypto /
+// THE browser crypto gate: assert TS crypto is bit-identical to poof-crypto /
 // the circuit, against the pinned vectors (INTERFACES.md §0).
 import { describe, it, expect, beforeAll } from "vitest";
 import {

@@ -1,0 +1,29 @@
+[package]
+name = "poof-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Poof crypto primitives: BN254 field encoding and circomlib-compatible Poseidon"
+
+[dependencies]
+# Only the scalar field `Fr` is needed (Poseidon); the full curve is not, which
+# keeps the no_std `wasm32v1-none` build lean. Curve/pairing ops in the contract
+# use Soroban's native bn254 host functions, not arkworks.
+ark-bn254 = { workspace = true, features = ["scalar_field"] }
+ark-ff = { workspace = true }
+
+[features]
+default = ["std"]
+# `std` is used by the SDK, indexer and the cross-impl tests. The contract
+# depends on this crate with `default-features = false` so it stays no_std and
+# compiles for the Soroban `wasm32v1-none` target.
+std = ["ark-bn254/std", "ark-ff/std"]
+
+[dev-dependencies]
+# light-poseidon is the audited circomlib-compatible reference. It is a DEV-only
+# dependency (it pulls ark with std, so it cannot be in the no_std build) used to
+# cross-check our hand-rolled no_std permutation against the canonical impl.
+light-poseidon = { workspace = true, default-features = true }
+ark-bn254 = { version = "0.5", features = ["std"] }
+ark-ff = { version = "0.5", features = ["std"] }
+hex = "0.4"
