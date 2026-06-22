@@ -130,7 +130,7 @@ export default function Landing() {
             >Docs</a>
           </div>
           <div className="pl-nav-actions">
-            <a className="pl-btn pl-btn-ghost" href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
+            <a className="pl-btn pl-btn-ghost" href="https://github.com/ManulParihar/Poof" target="_blank" rel="noreferrer">GitHub</a>
             <Link className="pl-btn pl-btn-orange" to="/app">Launch App</Link>
           </div>
         </div>
@@ -369,7 +369,7 @@ export default function Landing() {
           </div>
           <div>
             <h4 className="pl-footer-head">Connect</h4>
-            <a className="pl-footer-link" href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
+            <a className="pl-footer-link" href="https://github.com/ManulParihar/Poof" target="_blank" rel="noreferrer">GitHub</a>
             <a className="pl-footer-link" href="https://developers.stellar.org" target="_blank" rel="noreferrer">Developer docs</a>
           </div>
         </div>

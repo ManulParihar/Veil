@@ -4,28 +4,30 @@ import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import CountUp from 'react-countup';
 import {
-  StackedNormalizedAreaChart,
+  StackedAreaChart,
+  StackedAreaSeries,
   LinearXAxis,
   LinearXAxisTickSeries,
   LinearXAxisTickLabel,
   LinearYAxis,
   LinearYAxisTickSeries,
-  StackedNormalizedAreaSeries,
+  LinearYAxisTickLabel,
   Line,
   Area,
   Gradient,
   GradientStop,
   GridlineSeries,
   Gridline,
-  ChartDataTypes,
+  TooltipArea,
 } from 'reaviz';
 import { useWallet } from '../../store/wallet';
 import { formatAmount } from '../../lib/currencies';
+import type { TxRecord } from '../../lib/types';
 
 // --- Poof Themed Types ---
 interface ChartDataPoint {
   key: Date;
-  data: number | null | undefined;
+  data: number;
 }
 
 interface ChartSeries {
@@ -131,37 +133,74 @@ const TIME_PERIOD_OPTIONS: TimePeriodOption[] = [
   { value: 'last-30-days', label: 'Last 30 Days' },
 ];
 
-const now = new Date();
-const generateDate = (offsetDays: number): Date => {
-  const date = new Date(now);
-  date.setDate(now.getDate() - offsetDays);
-  return date;
+const DAY_MS = 86_400_000;
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+/** Which chart series a tx kind contributes to (or null = ignored). */
+const KIND_TO_SERIES: Record<string, 'Deposits' | 'Sends' | 'Withdraws' | null> = {
+  deposit: 'Deposits',
+  transfer: 'Sends',
+  withdraw: 'Withdraws',
+  receive: null,
+  faucet: null,
+  fund: null,
 };
 
-// Generate sample data (in real app this would come from wallet tx history)
-const getMockChartData = (): ChartSeries[] => [
-  {
-    key: 'Deposits',
-    data: Array.from({ length: 7 }, (_, i) => ({ key: generateDate(6 - i), data: Math.floor(Math.random() * 18) + 8 })),
-  },
-  {
-    key: 'Sends',
-    data: Array.from({ length: 7 }, (_, i) => ({ key: generateDate(6 - i), data: Math.floor(Math.random() * 14) + 5 })),
-  },
-  {
-    key: 'Withdraws',
-    data: Array.from({ length: 7 }, (_, i) => ({ key: generateDate(6 - i), data: Math.floor(Math.random() * 10) + 2 })),
-  },
-];
+/**
+ * Build the stacked-area series from the wallet's real tx history, bucketed by
+ * day across the selected window. If there's no real activity yet we fall back
+ * to a small synthetic sample so the chart never renders empty.
+ */
+const buildChartData = (txs: TxRecord[], days: number): { data: ChartSeries[]; isSample: boolean } => {
+  const today = startOfDay(new Date());
+  const buckets: Record<'Deposits' | 'Sends' | 'Withdraws', number[]> = {
+    Deposits: new Array(days).fill(0),
+    Sends: new Array(days).fill(0),
+    Withdraws: new Array(days).fill(0),
+  };
 
-const validateChartData = (data: ChartSeries[]) => {
-  return data.map(series => ({
-    key: series.key,
-    data: series.data.map(item => ({
-      key: item.key,
-      data: (typeof item.data !== 'number' || isNaN(item.data)) ? 0 : item.data,
+  let counted = 0;
+  for (const tx of txs) {
+    const series = KIND_TO_SERIES[tx.kind];
+    if (!series) continue;
+    const day = startOfDay(new Date(tx.createdAt));
+    const idx = days - 1 - Math.round((today.getTime() - day.getTime()) / DAY_MS);
+    if (idx < 0 || idx >= days) continue;
+    buckets[series][idx] += 1;
+    counted += 1;
+  }
+
+  const dateFor = (i: number) => new Date(today.getTime() - (days - 1 - i) * DAY_MS);
+
+  if (counted === 0) {
+    // gentle synthetic sample (clearly a demo, but keeps the chart alive)
+    const sample = (base: number, jit: number) =>
+      Array.from({ length: days }, (_, i) => ({ key: dateFor(i), data: Math.floor(Math.random() * jit) + base }));
+    return {
+      isSample: true,
+      data: [
+        { key: 'Deposits', data: sample(6, 10) },
+        { key: 'Sends', data: sample(4, 9) },
+        { key: 'Withdraws', data: sample(2, 6) },
+      ],
+    };
+  }
+
+  return {
+    isSample: false,
+    data: (['Deposits', 'Sends', 'Withdraws'] as const).map((key) => ({
+      key,
+      data: buckets[key].map((data, i) => ({ key: dateFor(i), data })),
     })),
-  }));
+  };
+};
+
+const meanGapDays = (txs: TxRecord[]): number | null => {
+  if (txs.length < 2) return null;
+  const ts = txs.map((t) => t.createdAt).sort((a, b) => a - b);
+  let sum = 0;
+  for (let i = 1; i < ts.length; i++) sum += ts[i] - ts[i - 1];
+  return sum / (ts.length - 1) / DAY_MS;
 };
 
 const ACTIVITY_STATS: ActivityStat[] = [
@@ -189,62 +228,53 @@ const ACTIVITY_STATS: ActivityStat[] = [
   },
 ];
 
-const DETAILED_METRICS: DetailedMetric[] = [
-  {
-    id: 'avgsize',
-    Icon: ShieldIcon,
-    label: 'Avg Private Transfer',
-    tooltip: 'Average value moved privately',
-    value: '142 XLM',
-    TrendIcon: DetailedTrendUpIcon,
-    trendBaseColor: '#E8D5A3',
-    trendStrokeColor: '#D4B36E',
-    delay: 0,
-    iconFillColor: '#E8D5A3',
-  },
-  {
-    id: 'interval',
-    Icon: NoteIcon,
-    label: 'Mean Time Between Actions',
-    tooltip: 'Average time between your private moves',
-    value: '2.4 days',
-    TrendIcon: DetailedTrendDownIcon,
-    trendBaseColor: '#A78BFA',
-    trendStrokeColor: '#7B6BFF',
-    delay: 0.05,
-    iconFillColor: '#A78BFA',
-  },
-  {
-    id: 'mix',
-    Icon: FlowIcon,
-    label: 'Privacy Mix Rate',
-    tooltip: 'How well your value is mixed',
-    value: '94%',
-    TrendIcon: DetailedTrendUpIcon,
-    trendBaseColor: '#E8D5A3',
-    trendStrokeColor: '#D4B36E',
-    delay: 0.1,
-    iconFillColor: '#E8D5A3',
-  },
-];
-
 const AdvancedPoofActivityReport: React.FC = () => {
   const [selectedTimePeriod, setSelectedTimePeriod] = useState<string>(TIME_PERIOD_OPTIONS[0].value);
   const wallet = useWallet();
 
-  // In a real enhancement, filter wallet.txs and notes by selectedTimePeriod
-  const chartData = useMemo(() => validateChartData(getMockChartData()), []);
+  const days = selectedTimePeriod === 'last-30-days' ? 30 : 7;
+  const { data: chartData, isSample } = useMemo(
+    () => buildChartData(wallet.txs, days),
+    [wallet.txs, days]
+  );
 
-  // Simple derived stats from real wallet (for authenticity)
+  // Derived, real stats from the wallet
   const realNoteCount = wallet.notes.filter(n => !n.spent && !n.invalidReason).length;
   const realTxCount = wallet.txs.length;
+  const transferCount = wallet.txs.filter(t => t.kind === 'transfer').length;
+
+  // Real detailed metrics (with graceful fallbacks)
+  const detailedMetrics = useMemo<DetailedMetric[]>(() => {
+    const transfers = wallet.txs.filter(t => t.kind === 'transfer' && t.amount > 0n);
+    const avgTransfer = transfers.length
+      ? formatAmount(transfers.reduce((s, t) => s + t.amount, 0n) / BigInt(transfers.length), 0)
+      : '—';
+    const gap = meanGapDays(wallet.txs);
+    const settled = wallet.txs.filter(t => t.status === 'success').length;
+    const mix = wallet.txs.length ? Math.round((settled / wallet.txs.length) * 100) : 0;
+    return [
+      { id: 'avgsize', Icon: ShieldIcon, label: 'Avg Private Transfer', tooltip: 'Average value moved privately',
+        value: avgTransfer, TrendIcon: DetailedTrendUpIcon, trendBaseColor: '#E8D5A3', trendStrokeColor: '#D4B36E', delay: 0, iconFillColor: '#E8D5A3' },
+      { id: 'interval', Icon: NoteIcon, label: 'Mean Time Between Actions', tooltip: 'Average time between your private moves',
+        value: gap == null ? '—' : `${gap.toFixed(1)} days`, TrendIcon: DetailedTrendDownIcon, trendBaseColor: '#A78BFA', trendStrokeColor: '#7B6BFF', delay: 0.05, iconFillColor: '#A78BFA' },
+      { id: 'mix', Icon: FlowIcon, label: 'Settlement Success', tooltip: 'Share of your actions that settled on-chain',
+        value: `${mix}%`, TrendIcon: DetailedTrendUpIcon, trendBaseColor: '#E8D5A3', trendStrokeColor: '#D4B36E', delay: 0.1, iconFillColor: '#E8D5A3' },
+    ];
+  }, [wallet.txs]);
 
   return (
       <div className="flex flex-col justify-between pt-4 pb-4 bg-poof-card rounded-3xl shadow-glow border border-poof-border w-full overflow-hidden">
         {/* Header - Poof Style */}
         <div className="flex justify-between items-center p-7 pt-6 pb-6">
           <div>
-            <h3 className="text-2xl font-semibold text-poof-text">Private Activity Report</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-2xl font-semibold text-poof-text">Private Activity Report</h3>
+              {isSample && (
+                <span className="text-[10px] uppercase tracking-wide text-poof-gold/80 border border-poof-gold/30 bg-poof-gold/10 px-2 py-0.5 rounded-full">
+                  sample
+                </span>
+              )}
+            </div>
             <p className="text-poof-muted text-xs mt-0.5">Your shielded value flows — no one else sees the details.</p>
           </div>
           <select
@@ -271,17 +301,21 @@ const AdvancedPoofActivityReport: React.FC = () => {
           ))}
         </div>
 
-        {/* Chart */}
+        {/* Chart — clean gradient stacked area */}
         <div className="reaviz-chart-container h-[260px] px-4">
-          <StackedNormalizedAreaChart
+          <StackedAreaChart
             height={260}
             id="poof-stacked-activity"
             data={chartData}
+            gridlines={
+              <GridlineSeries line={<Gridline direction="y" strokeColor="#2A254570" />} />
+            }
             xAxis={
               <LinearXAxis
                 type="time"
                 tickSeries={
                   <LinearXAxisTickSeries
+                    line={null}
                     label={
                       <LinearXAxisTickLabel
                         format={v => new Date(v).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
@@ -292,11 +326,33 @@ const AdvancedPoofActivityReport: React.FC = () => {
                 }
               />
             }
-            yAxis={<LinearYAxis type="value" />}
-            series={
-              <StackedNormalizedAreaSeries line={<Line strokeWidth={1.5} />} />
+            yAxis={
+              <LinearYAxis
+                type="value"
+                axisLine={null}
+                tickSeries={<LinearYAxisTickSeries line={null} label={<LinearYAxisTickLabel fill="#8B7FA3" />} />}
+              />
             }
-            gridlines={<GridlineSeries line={<Gridline strokeColor="#3F385250" />} />}
+            series={
+              <StackedAreaSeries
+                interpolation="smooth"
+                colorScheme={CHART_COLOR_SCHEME}
+                line={<Line strokeWidth={2} />}
+                area={
+                  <Area
+                    gradient={
+                      <Gradient
+                        stops={[
+                          <GradientStop key="0" offset="0%" stopOpacity={0.05} />,
+                          <GradientStop key="1" offset="80%" stopOpacity={0.45} />,
+                        ]}
+                      />
+                    }
+                  />
+                }
+                tooltip={<TooltipArea />}
+              />
+            }
           />
         </div>
 
@@ -309,7 +365,7 @@ const AdvancedPoofActivityReport: React.FC = () => {
                 <CountUp
                   className="font-mono text-3xl font-semibold text-poof-text tabular-nums"
                   start={stat.countFrom || 0}
-                  end={index === 0 ? realTxCount || stat.count : realNoteCount || stat.count}
+                  end={realTxCount > 0 ? (index === 0 ? transferCount : realNoteCount) : stat.count}
                   duration={2.2}
                 />
                 <div className={`flex items-center gap-1 ${stat.trendBgColor} p-1 pl-2 pr-2 rounded-full text-xs ${stat.trendColor}`}>
@@ -324,7 +380,7 @@ const AdvancedPoofActivityReport: React.FC = () => {
 
         {/* Detailed Metrics - Animated + Poof Colors */}
         <div className="flex flex-col pl-7 pr-7 font-mono divide-y divide-poof-border mt-4 text-sm">
-          {DETAILED_METRICS.map((metric) => (
+          {detailedMetrics.map((metric) => (
             <motion.div
               key={metric.id}
               initial={{ opacity: 0, y: 12 }}
