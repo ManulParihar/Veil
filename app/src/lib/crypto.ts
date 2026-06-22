@@ -1,7 +1,7 @@
-// Veil client crypto — the browser's single source of note math, bit-identical
-// to crates/veil-crypto and the circom circuit. Poseidon comes from circomlibjs
+// Poof client crypto — the browser's single source of note math, bit-identical
+// to crates/poof-crypto and the circom circuit. Poseidon comes from circomlibjs
 // (the same iden3 reference circomlib compiles from), so hashes match the
-// on-chain contract and the proof system. Verified against the pinned veil-crypto
+// on-chain contract and the proof system. Verified against the pinned poof-crypto
 // vectors in crypto.test.ts.
 
 import { buildPoseidon } from "circomlibjs";
@@ -43,7 +43,7 @@ export const hash3 = (a: bigint, b: bigint, c: bigint) => poseidon([a, b, c]);
 export const hash4 = (a: bigint, b: bigint, c: bigint, d: bigint) => poseidon([a, b, c, d]);
 export const compress = (l: bigint, r: bigint) => hash2(l, r);
 
-// ── field <-> bytes (32-byte big-endian, the Veil wire encoding) ──
+// ── field <-> bytes (32-byte big-endian, the Poof wire encoding) ──
 
 export function bytesToField(bytes: Uint8Array): bigint {
   let v = 0n;
@@ -71,7 +71,7 @@ export const fromHex = (h: string) => {
 };
 export const fieldToHex = (x: bigint) => toHex(fieldToBytes(x));
 
-// ── key hierarchy (mirrors veil-crypto::Seed) ──
+// ── key hierarchy (mirrors poof-crypto::Seed) ──
 
 export interface Keys {
   seed: Uint8Array; // 32 bytes
@@ -124,7 +124,7 @@ export function nullifier(n: Note, sk: bigint, pathIndex: bigint): bigint {
 export const zeroLeaf = () => hash1(0n);
 
 // ── note encryption (X25519 ECDH → ChaCha20Poly1305 + 1-byte view tag) ──
-// Wire blob = ephemeral_pub(32) || aead_ct, matching veil-sdk::encrypt.
+// Wire blob = ephemeral_pub(32) || aead_ct, matching poof-sdk::encrypt.
 
 const KEY_DOMAIN = new TextEncoder().encode("veil-note-key");
 
@@ -213,7 +213,7 @@ export interface ExtData {
   fee: bigint; // u128
   ciphertexts: [Uint8Array, Uint8Array];
   viewTags: [number, number];
-  /** Phase-2 settlement counterparty (Stellar G-address strkey). Bound into the
+  /** Settlement counterparty (Stellar G-address strkey). Bound into the
    *  hash via its ASCII bytes so a withdraw recipient can't be redirected. */
   settlementAddress: string;
 }

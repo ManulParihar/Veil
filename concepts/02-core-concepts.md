@@ -6,9 +6,9 @@ What it is:
 
 A shielded pool is a smart contract that holds value while hiding ownership and transfer details.
 
-Why it exists in Veil:
+Why it exists in Poof:
 
-Veil wants private transfers on a public blockchain.
+Poof wants private transfers on a public blockchain.
 
 How it is used here:
 
@@ -24,7 +24,7 @@ What it is:
 
 A note is a private off-chain object representing spendable value.
 
-In Veil, a note contains:
+In Poof, a note contains:
 
 ```text
 amount
@@ -50,7 +50,7 @@ What it is:
 
 A commitment is a hash that hides data but binds the creator to that data.
 
-In Veil:
+In Poof:
 
 ```text
 commitment = Poseidon(amount, pk, blinding)
@@ -83,7 +83,7 @@ What it is:
 
 A nullifier is a public value that marks a private note as spent.
 
-In Veil:
+In Poof:
 
 ```text
 signature = Poseidon(sk, commitment, pathIndex)
@@ -108,7 +108,7 @@ What it is:
 
 A Merkle tree is a hash tree where many leaves are summarized by one root.
 
-Why it exists in Veil:
+Why it exists in Poof:
 
 It lets the circuit prove "my note commitment exists in the pool" without revealing which leaf it is.
 
@@ -165,7 +165,7 @@ What it is:
 
 A public field used for deposit and withdrawal edges.
 
-In Veil's equation:
+In Poof's equation:
 
 ```text
 publicAmount + sum(inputs) = sum(outputs)

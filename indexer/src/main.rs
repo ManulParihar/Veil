@@ -1,20 +1,20 @@
-//! Veil indexer entry point: wires config from env, starts the ingest loop and
+//! Poof indexer entry point: wires config from env, starts the ingest loop and
 //! the axum read API.
 //!
 //! Config (env vars):
-//! - `VEIL_DB_PATH`        SQLite file path                 (default: `veil-indexer.db`)
-//! - `VEIL_RPC_URL`        Soroban RPC endpoint             (default: testnet)
-//! - `VEIL_CONTRACT_ID`    pool contract id to filter on    (required for live ingest)
-//! - `VEIL_POLL_SECS`      poll interval in seconds         (default: 5)
-//! - `VEIL_FINALITY_LAG`   confirmations before ingest      (default: 5)
-//! - `VEIL_BIND`           HTTP bind address                (default: 0.0.0.0:8080)
+//! - `POOF_DB_PATH`        SQLite file path                 (default: `poof-indexer.db`)
+//! - `POOF_RPC_URL`        Soroban RPC endpoint             (default: testnet)
+//! - `POOF_CONTRACT_ID`    pool contract id to filter on    (required for live ingest)
+//! - `POOF_POLL_SECS`      poll interval in seconds         (default: 5)
+//! - `POOF_FINALITY_LAG`   confirmations before ingest      (default: 5)
+//! - `POOF_BIND`           HTTP bind address                (default: 0.0.0.0:8080)
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use veil_indexer::ingest;
-use veil_indexer::rpc::StellarRpcSource;
-use veil_indexer::Store;
+use poof_indexer::ingest;
+use poof_indexer::rpc::StellarRpcSource;
+use poof_indexer::Store;
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -29,17 +29,17 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let db_path = env_or("VEIL_DB_PATH", "veil-indexer.db");
+    let db_path = env_or("POOF_DB_PATH", "poof-indexer.db");
     let rpc_url = env_or(
-        "VEIL_RPC_URL",
+        "POOF_RPC_URL",
         "https://soroban-testnet.stellar.org",
     );
-    let contract_id = std::env::var("VEIL_CONTRACT_ID").ok();
-    let poll_secs: u64 = env_or("VEIL_POLL_SECS", "5").parse().unwrap_or(5);
-    let finality_lag: u64 = env_or("VEIL_FINALITY_LAG", "5")
+    let contract_id = std::env::var("POOF_CONTRACT_ID").ok();
+    let poll_secs: u64 = env_or("POOF_POLL_SECS", "5").parse().unwrap_or(5);
+    let finality_lag: u64 = env_or("POOF_FINALITY_LAG", "5")
         .parse()
         .unwrap_or(ingest::DEFAULT_FINALITY_LAG);
-    let bind = env_or("VEIL_BIND", "0.0.0.0:8080");
+    let bind = env_or("POOF_BIND", "0.0.0.0:8080");
 
     let store = Arc::new(Store::open(&db_path)?);
     tracing::info!(db = %db_path, "store ready");
@@ -57,10 +57,10 @@ async fn main() -> anyhow::Result<()> {
             Duration::from_secs(poll_secs),
         ));
     } else {
-        tracing::warn!("VEIL_CONTRACT_ID unset — serving read API only, no ingest");
+        tracing::warn!("POOF_CONTRACT_ID unset — serving read API only, no ingest");
     }
 
-    let app = veil_indexer::api::router(store);
+    let app = poof_indexer::api::router(store);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     tracing::info!(addr = %bind, "serving read API");
     axum::serve(listener, app)

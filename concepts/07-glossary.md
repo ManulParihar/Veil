@@ -2,11 +2,11 @@
 
 ## AEAD
 
-Authenticated encryption with associated data. Veil uses ChaCha20Poly1305 so wrong recipients or tampered ciphertexts fail to decrypt.
+Authenticated encryption with associated data. Poof uses ChaCha20Poly1305 so wrong recipients or tampered ciphertexts fail to decrypt.
 
 ## BN254
 
-The pairing-friendly curve family used by Veil's Groth16 proofs and field arithmetic.
+The pairing-friendly curve family used by Poof's Groth16 proofs and field arithmetic.
 
 ## Blinding
 
@@ -14,7 +14,7 @@ Randomness inside a note commitment. It prevents equal note data from producing 
 
 ## Commitment
 
-A hash that hides note data while binding the creator to it. In Veil: `Poseidon(amount, pk, blinding)`.
+A hash that hides note data while binding the creator to it. In Poof: `Poseidon(amount, pk, blinding)`.
 
 ## Dummy Input
 
@@ -30,7 +30,7 @@ Keccak hash of `ExtData`, reduced into the BN254 field. It binds external data t
 
 ## Field Element
 
-A number modulo a prime. Veil uses BN254 scalar field elements for hashes, roots, nullifiers, and public signals.
+A number modulo a prime. Poof uses BN254 scalar field elements for hashes, roots, nullifiers, and public signals.
 
 ## Groth16
 
@@ -38,7 +38,7 @@ A zkSNARK proving system with small proofs and fast verification. It requires a 
 
 ## Incremental Merkle Tree
 
-A Merkle tree optimized for appending leaves. Veil uses it to add new note commitments.
+A Merkle tree optimized for appending leaves. Poof uses it to add new note commitments.
 
 ## Joinsplit
 
@@ -62,15 +62,15 @@ A public value derived from a note and spend key. It marks a note as spent witho
 
 ## Poseidon
 
-A ZK-friendly hash function. Veil uses circomlib Poseidon over BN254.
+A ZK-friendly hash function. Poof uses circomlib Poseidon over BN254.
 
 ## Public Signal
 
-A public input/output value of a ZK circuit. Veil has seven public signals in a frozen order.
+A public input/output value of a ZK circuit. Poof has seven public signals in a frozen order.
 
 ## Range Check
 
-A circuit check proving a number is within a valid range. Veil checks amounts are 64-bit.
+A circuit check proving a number is within a valid range. Poof checks amounts are 64-bit.
 
 ## Relayer
 
@@ -82,11 +82,11 @@ A contract where private notes are represented on-chain by commitments and spent
 
 ## Trusted Setup
 
-A setup process that creates proving and verification keys. Groth16 needs one per circuit. Veil's current setup is single-contributor and not production-safe.
+A setup process that creates proving and verification keys. Groth16 needs one per circuit. Poof's current setup is single-contributor and not production-safe.
 
 ## UTXO
 
-Unspent transaction output. In Veil, a note is the private equivalent of a UTXO.
+Unspent transaction output. In Poof, a note is the private equivalent of a UTXO.
 
 ## View Tag
 

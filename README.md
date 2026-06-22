@@ -1,4 +1,4 @@
-# Veil
+# Poof
 
 Private Stellar testnet payments with Soroban, Groth16 proofs, and shielded notes.
 
@@ -6,9 +6,9 @@ Private Stellar testnet payments with Soroban, Groth16 proofs, and shielded note
 ![network](https://img.shields.io/badge/network-Stellar%20testnet-7D00FF)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
-![Veil wallet confirmed payment](app/e2e/screenshots/06-confirmed.png)
+![Confirmed shielded payment using Poof](app/e2e/screenshots/04-withdraw-confirmed.png)
 
-Veil is a UTXO-style shielded pool for Stellar/Soroban. It keeps real testnet
+Poof is a UTXO-style shielded pool for Stellar/Soroban. It keeps real testnet
 assets in a Soroban contract while private notes appear on-chain only as
 Poseidon commitments. A spend reveals nullifiers and a Groth16 proof, not the
 spent note, owner, or amount.
@@ -26,8 +26,8 @@ Prerequisites:
 - Stellar CLI for redeploying the contract
 
 ```bash
-git clone git@github.com:ManulParihar/Veil.git
-cd Veil
+git clone git@github.com:ManulParihar/Poof.git
+cd Poof
 rustup target add wasm32v1-none
 
 cargo fetch
@@ -85,7 +85,7 @@ bash scripts/prove.sh build/sample_input.json
 
 | Item | Value |
 |---|---|
-| Contract | [`CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4`](https://stellar.expert/explorer/testnet/contract/CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4) |
+| Contract | [`CDVNLQYWDDH4BJQJBIOWW2CJELVR62FGGVPQN3ZMUNS7PUCIWH3SBLPN`](https://stellar.expert/explorer/testnet/contract/CDVNLQYWDDH4BJQJBIOWW2CJELVR62FGGVPQN3ZMUNS7PUCIWH3SBLPN) |
 | Network | Stellar testnet |
 | Merkle tree | depth 20, root history 64 |
 | Currency 0 | XLM, native SAC `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
@@ -93,22 +93,22 @@ bash scripts/prove.sh build/sample_input.json
 | Genesis root | `2d3c07bea6883428edd2d80d07cec4b911309fed96743822d6aadea06313a951` |
 
 See [`deploy/addresses.json`](deploy/addresses.json) for deployment metadata,
-transaction hashes, and the previous Phase 1/Phase 2 contracts.
+transaction hashes, and previous testnet contracts.
 
 ## Architecture
 
-| Plane | Path | Role |
+| Component | Path | Role |
 |---|---|---|
-| Crypto core | [`crates/veil-crypto`](crates/veil-crypto) | BN254 field encoding, circomlib-compatible Poseidon, note commitments, nullifiers |
+| Crypto core | [`crates/poof-crypto`](crates/poof-crypto) | BN254 field encoding, circomlib-compatible Poseidon, note commitments, nullifiers |
 | Circuit | [`circuits`](circuits) | 2-input/2-output Groth16 joinsplit with amount range checks and value conservation |
-| Contract | [`crates/veil-contract`](crates/veil-contract) | Soroban authority for roots, nullifiers, token registry, settlement, and BN254 verification |
-| SDK | [`crates/veil-sdk`](crates/veil-sdk) | Key derivation, note encryption, scanning, Merkle witnesses, and proof inputs |
+| Contract | [`crates/poof-contract`](crates/poof-contract) | Soroban authority for roots, nullifiers, token registry, settlement, and BN254 verification |
+| SDK | [`crates/poof-sdk`](crates/poof-sdk) | Key derivation, note encryption, scanning, Merkle witnesses, and proof inputs |
 | Indexer | [`indexer`](indexer) | SQLite-backed event ingestion and read API |
-| Wallet | [`app`](app) | Vite/React wallet for deposits, private sends, withdrawals, and browser proofs |
+| Web App | [`app`](app) | Vite/React wallet for deposits, private sends, withdrawals, and browser proofs |
 
 The critical invariant is that Poseidon is bit-identical in Rust, Circom, and
 TypeScript. The pinned cross-implementation vectors live in
-[`INTERFACES.md`](INTERFACES.md), [`crates/veil-crypto/tests/cross_impl.rs`](crates/veil-crypto/tests/cross_impl.rs),
+[`INTERFACES.md`](INTERFACES.md), [`crates/poof-crypto/tests/cross_impl.rs`](crates/poof-crypto/tests/cross_impl.rs),
 and [`app/src/lib/crypto.test.ts`](app/src/lib/crypto.test.ts).
 
 ## API
@@ -136,11 +136,11 @@ See [`INTERFACES.md`](INTERFACES.md) for byte encoding, event schemas,
 Run the core verification gates:
 
 ```bash
-cargo test -p veil-crypto
-cargo test -p veil-contract --features mock-verifier
-cargo test -p veil-contract
-cargo test -p veil-sdk
-cargo test -p veil-indexer
+cargo test -p poof-crypto
+cargo test -p poof-contract --features mock-verifier
+cargo test -p poof-contract
+cargo test -p poof-sdk
+cargo test -p poof-indexer
 ```
 
 Run the wallet tests:
@@ -155,10 +155,43 @@ npm run e2e
 Run the ignored SDK proof test after circuit artifacts exist:
 
 ```bash
-cargo test -p veil-sdk --test e2e_prove -- --ignored
+cargo test -p poof-sdk --test e2e_prove -- --ignored
 ```
 
+## Share & reproduce
+
+Everything needed to run Poof is in this repo **except one file**: the proving
+key `transaction.zkey` (~11 MB) is gitignored because of its size. There are no
+other out-of-band secrets — the deployer identity lives only in your local
+`stellar keys` keystore and is never required to *run* the project against the
+live contract.
+
+The catch: the `transaction.zkey` and the contract's on-chain verifying key must
+come from the **same trusted setup** ("world"), or every proof fails with
+contract error `#5`. So you have two share paths:
+
+- **Use the live contract** — send the recipient the exact
+  `app/public/circuit/transaction.zkey` that matches the deployed contract
+  (alongside the repo). Then they run the default bootstrap.
+- **Recipient runs their own** — they regenerate the setup and redeploy their
+  own contract with `--fresh` (no zkey needed from you).
+
+```bash
+bash deploy/bootstrap.sh           # use the shared zkey + the live contract
+bash deploy/bootstrap.sh --fresh   # regenerate setup, rebuild VK, redeploy a new contract
+```
+
+`bootstrap.sh` checks prerequisites, installs deps, (re)builds, runs the
+integration gate that proves the zkey matches the contract's world, and produces
+a production build. `--fresh` additionally compiles the circuit, runs the
+single-contributor setup, syncs artifacts into the app, and redeploys — after
+which you update `CONTRACT_ID` / `CONTRACT_START_LEDGER` in
+[`app/src/lib/types.ts`](app/src/lib/types.ts) and
+[`deploy/addresses.json`](deploy/addresses.json) with the printed values.
+
 ## Deploy
+
+### Contract (testnet)
 
 Deploy a fresh testnet contract and register a second asset:
 
@@ -169,6 +202,67 @@ bash deploy/deploy_testnet.sh
 The script funds a deployer through friendbot, builds optimized Soroban wasm,
 initializes XLM as currency `0`, deploys a VUSD Stellar Asset Contract, and
 registers it as currency `1`.
+
+### Web app (Vercel)
+
+The app is a static SPA with **no required backend** — it talks directly to
+Soroban RPC and friendbot and generates proofs in the browser. Vercel is a good
+fit. [`app/vercel.json`](app/vercel.json) sets the build command, output
+directory, and an SPA rewrite so deep links don't 404. Set the project root to
+`app/` and add the one env var the faucet needs:
+
+```text
+VITE_VUSD_FAUCET_SECRET = <secret from `stellar keys show poof-faucet`>
+```
+
+This is a `VITE_`-prefixed var, so it is **bundled into the client**. That is
+acceptable only because it is a low-stakes testnet faucet distributor key —
+never put an admin/issuer key in a `VITE_` var.
+
+### Indexer (Hosting)
+
+The optional [`indexer`](indexer) is a long-running RPC poller + read API
+backed by SQLite. It needs a persistent process and disk, so it cannot run on
+Vercel. The repo ships a multi-stage [`Dockerfile`](Dockerfile) and a
+[`fly.toml`](fly.toml); any container host (Fly.io, Railway, Render, a VM)
+works.
+
+```bash
+fly volumes create poofdata --size 1 --region iad
+fly secrets set POOF_CONTRACT_ID=CDVNLQYWDDH4BJQJBIOWW2CJELVR62FGGVPQN3ZMUNS7PUCIWH3SBLPN
+fly deploy
+```
+
+It serves `GET /health`, `/notes`, `/nullifiers`, and `/tree/root`. Config is
+all env vars (`POOF_DB_PATH`, `POOF_RPC_URL`, `POOF_CONTRACT_ID`, `POOF_BIND`,
+`POOF_POLL_SECS`); see [`indexer/src/main.rs`](indexer/src/main.rs).
+
+## Trusted setup ceremony
+
+The shipped setup has a single local contributor — fine for testnet, not for
+anything real. [`circuits/scripts/ceremony.sh`](circuits/scripts/ceremony.sh)
+runs a multi-party Groth16 phase-2 ceremony, which is **sound as long as at
+least one contributor destroys their entropy**. Contribution is sequential: each
+person builds on the previous `.zkey`.
+
+```bash
+# Coordinator: produce the starting key
+bash circuits/scripts/ceremony.sh init                     # -> contrib_0000.zkey (publish it)
+
+# Each contributor, in turn, on their own machine:
+bash circuits/scripts/ceremony.sh contribute <in.zkey> <out.zkey> <name>
+# -> send <out.zkey> on; post the printed attestation hash publicly
+
+# Coordinator, after the last contribution returns:
+bash circuits/scripts/ceremony.sh finalize <last.zkey>     # -> transaction.zkey + verification_key.json
+```
+
+The intermediate `.zkey` files contain no secrets, so distribute them however is
+convenient (S3, GitHub release assets, a shared drive); the attestation-hash
+chain is the public, auditable transcript. For a public ceremony with strangers
+and a web UI, use a framework like p0tion instead. **A finished ceremony is a
+new world — you must redeploy the contract afterward** (the script prints the
+exact `export_vk_rust.js` + `deploy_testnet.sh` steps).
 
 ## Limits
 
@@ -183,14 +277,14 @@ registers it as currency `1`.
 
 Use the smallest gate that covers your change:
 
-- Crypto or note math: `cargo test -p veil-crypto`
+- Crypto or note math: `cargo test -p poof-crypto`
 - Circuit changes: `cd circuits && node test/transaction.test.js`
-- Contract state or settlement: `cargo test -p veil-contract`
-- SDK witness, scan, or encryption code: `cargo test -p veil-sdk`
+- Contract state or settlement: `cargo test -p poof-contract`
+- SDK witness, scan, or encryption code: `cargo test -p poof-sdk`
 - Wallet changes: `cd app && npm test && npm run build`
 - Browser flows: `cd app && npm run e2e`
 
-Keep [`INTERFACES.md`](INTERFACES.md) in sync with any cross-plane change.
+Keep [`INTERFACES.md`](INTERFACES.md) in sync with any cross-component change.
 Report bugs and design issues in GitHub issues.
 
 ## License

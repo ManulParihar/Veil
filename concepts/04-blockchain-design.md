@@ -145,7 +145,7 @@ Meaning:
 
 Why include it now:
 
-The circuit and public signal layout are already compatible with Phase 2.
+The circuit and public signal layout are compatible with public settlement.
 
 ## Deployment
 

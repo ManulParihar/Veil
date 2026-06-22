@@ -1,0 +1,26 @@
+[package]
+name = "poof-contract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Poof Soroban shielded-pool contract"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# `alloc` registers soroban's bump-pointer global allocator for the wasm guest;
+# required because poof-crypto's arkworks field arithmetic uses `alloc`.
+soroban-sdk = { version = "26.1", features = ["alloc"] }
+poof-crypto = { path = "../poof-crypto", default-features = false }
+
+[dev-dependencies]
+soroban-sdk = { version = "26.1", features = ["testutils"] }
+hex = "0.4"
+
+[features]
+# Test-only escape hatch: makes `verifier::verify` accept on a sentinel proof so
+# the contract-level edge cases (double-spend, stale root, ordering, ...) can be
+# exercised without a real Groth16 proof from the circuit. The real BN254
+# pairing code path stays compiled and is tested separately in verifier.rs.
+mock-verifier = []

@@ -9,6 +9,6 @@ await p.goto("http://localhost:4173/app/deposit");
 await p.getByTestId("deposit-amount").fill("2");
 await p.getByTestId("deposit-submit").click();
 await p.waitForFunction(()=>/confirmed|failed/.test(document.querySelector('[data-testid="tx-status"]')?.textContent||""),{timeout:120000}).catch(()=>{});
-const danger = await p.locator(".text-veil-danger").allTextContents();
+const danger = await p.locator(".text-poof-danger").allTextContents();
 console.log("DANGER:", JSON.stringify(danger));
 await b.close();

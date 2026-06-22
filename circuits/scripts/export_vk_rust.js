@@ -1,7 +1,7 @@
 // Convert snarkjs verification_key.json + a sample proof.json/public.json into
 // Rust the contract can consume:
-//   - crates/veil-contract/src/vk.rs           (the real verifying key)
-//   - crates/veil-contract/src/sample_proof.rs (a real proof fixture)
+//   - crates/poof-contract/src/vk.rs           (the real verifying key)
+//   - crates/poof-contract/src/sample_proof.rs (a real proof fixture)
 //
 // Byte layout (Soroban host, soroban_sdk::crypto::bn254):
 //   G1  = be(x) || be(y)                       (64 bytes)
@@ -70,8 +70,8 @@ ${ic.map((b) => "        " + bytesLit(b) + ",").join("\n")}
     ],
 };
 `;
-fs.writeFileSync(path.join(__dirname, "../../crates/veil-contract/src/vk.rs"), s);
-console.log("wrote crates/veil-contract/src/vk.rs (NUM_PUBLIC=" + vk.nPublic + ", IC=" + ic.length + ")");
+fs.writeFileSync(path.join(__dirname, "../../crates/poof-contract/src/vk.rs"), s);
+console.log("wrote crates/poof-contract/src/vk.rs (NUM_PUBLIC=" + vk.nPublic + ", IC=" + ic.length + ")");
 
 // ---- sample_proof.rs fixture ----
 const a = g1(proof.pi_a);
@@ -92,5 +92,5 @@ pub const PUBLIC_SIGNALS: [[u8; 32]; ${pub.length}] = [
 ${pub.map((x) => "    " + bytesLit(be32(x)) + ",").join("\n")}
 ];
 `;
-fs.writeFileSync(path.join(__dirname, "../../crates/veil-contract/src/sample_proof.rs"), f);
-console.log("wrote crates/veil-contract/src/sample_proof.rs (" + pub.length + " signals)");
+fs.writeFileSync(path.join(__dirname, "../../crates/poof-contract/src/sample_proof.rs"), f);
+console.log("wrote crates/poof-contract/src/sample_proof.rs (" + pub.length + " signals)");

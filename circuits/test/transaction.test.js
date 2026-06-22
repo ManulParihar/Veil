@@ -1,7 +1,7 @@
-// Veil circuit tests — runnable with plain node (no mocha):
+// Poof circuit tests — runnable with plain node (no mocha):
 //   node test/transaction.test.js
 //
-// Proves: (1) the circuit's Poseidon matches the pinned veil-crypto vectors
+// Proves: (1) the circuit's Poseidon matches the pinned poof-crypto vectors
 // (the cross-impl gate, through the circuit); (2) the joinsplit accepts a valid
 // value-conserving witness; (3) it rejects value non-conservation; (4) it
 // rejects duplicate input nullifiers.
@@ -15,7 +15,7 @@ const INCLUDE = [
   path.join(__dirname, "../src"),
 ];
 
-// Pinned vectors from INTERFACES.md §0 / veil-crypto cross_impl test.
+// Pinned vectors from INTERFACES.md §0 / poof-crypto cross_impl test.
 // Pinned for sk=7, amount=100, currencyId=1, blinding=42, pathIndex=3.
 const PIN = {
   pk: "7061949393491957813657776856458368574501817871421526214197139795307327923534",
@@ -39,7 +39,7 @@ async function test(name, fn) {
 const ZEROS20 = Array(20).fill("0");
 
 (async () => {
-  console.log("Veil circuit tests\n");
+  console.log("Poof circuit tests\n");
 
   const noteVec = await wasm_tester(
     path.join(__dirname, "circuits/note_vec.circom"),
@@ -72,7 +72,7 @@ const ZEROS20 = Array(20).fill("0");
   }
 
   // ---- 1. cross-impl gate, through the circuit ----
-  await test("Poseidon note pipeline matches pinned veil-crypto vectors", async () => {
+  await test("Poseidon note pipeline matches pinned poof-crypto vectors", async () => {
     const w = await noteVec.calculateWitness(
       { sk: "7", amount: "100", currencyId: "1", blinding: "42", pathIndex: "3" },
       true

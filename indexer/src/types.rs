@@ -6,9 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A parsed Veil contract event (INTERFACES.md §5).
+/// A parsed Poof contract event (INTERFACES.md §5).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VeilEvent {
+pub enum PoofEvent {
     /// `("NewCommitment",)` → `(commitment, leaf_index, ciphertext, view_tag)`.
     NewCommitment {
         cm: String,         // 32-byte commitment, hex
@@ -27,7 +27,7 @@ pub enum VeilEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LedgerEvent {
     pub ledger: u64,
-    pub event: VeilEvent,
+    pub event: PoofEvent,
 }
 
 /// Full commitment row as stored.

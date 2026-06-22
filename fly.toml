@@ -1,0 +1,45 @@
+# Fly.io deployment for the Poof indexer.
+#
+#   fly launch --no-deploy            # once, to create the app (or `fly apps create poof-indexer`)
+#   fly volumes create poofdata --size 1 --region iad   # persistent SQLite disk
+#   fly secrets set POOF_CONTRACT_ID=CDVNLQYWDDH4BJQJBIOWW2CJELVR62FGGVPQN3ZMUNS7PUCIWH3SBLPN
+#   fly deploy
+#
+# Build context is the repo root, so deploy from there (where the Dockerfile lives).
+
+app = "poof-indexer"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  POOF_DB_PATH = "/data/poof-indexer.db"
+  POOF_BIND = "0.0.0.0:8080"
+  POOF_RPC_URL = "https://soroban-testnet.stellar.org"
+  POOF_POLL_SECS = "5"
+  RUST_LOG = "info"
+  # POOF_CONTRACT_ID is set via `fly secrets set` (see header), not committed here.
+
+# Persist the SQLite database across restarts/redeploys.
+[[mounts]]
+  source = "poofdata"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1   # keep one alive so ingest never pauses
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -15,4 +15,4 @@ circuits/node_modules
 *.db-shm
 *.db-wal
 circuits/*.sym
-/veil-*.png
+/poof-*.png

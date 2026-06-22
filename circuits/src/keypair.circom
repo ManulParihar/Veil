@@ -2,7 +2,7 @@ pragma circom 2.0.0;
 
 include "poseidon.circom";
 
-// pk = Poseidon(sk)  — matches veil-crypto::Keypair::from_private.
+// pk = Poseidon(sk)  — matches poof-crypto::Keypair::from_private.
 template Keypair() {
     signal input privateKey;
     signal output publicKey;
@@ -13,7 +13,7 @@ template Keypair() {
 }
 
 // signature = Poseidon(sk, commitment, pathIndex)
-//   — matches veil-crypto::Note::signature. Binds the spender's secret to the
+//   — matches poof-crypto::Note::signature. Binds the spender's secret to the
 //     note's tree position so one note yields exactly one nullifier.
 template Signature() {
     signal input privateKey;

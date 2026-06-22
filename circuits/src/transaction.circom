@@ -6,7 +6,7 @@ include "bitify.circom";
 include "merkleproof.circom";
 include "keypair.circom";
 
-// The Veil 2-in / 2-out joinsplit.
+// The Poof 2-in / 2-out joinsplit.
 //
 // Public signals (FROZEN order - must equal INTERFACES.md §3 and the contract's
 // PublicSignals layout):
@@ -19,7 +19,7 @@ include "keypair.circom";
 //   [6] outputCommitment[1]
 //   [7] currencyId          // multi-currency: the asset all notes in this tx use
 //
-// All note math mirrors crates/veil-crypto (the single source of Poseidon truth):
+// All note math mirrors crates/poof-crypto (the single source of Poseidon truth):
 //   pk         = Poseidon(sk)
 //   commitment = Poseidon(amount, currencyId, pk, blinding)
 //   signature  = Poseidon(sk, commitment, pathIndex)

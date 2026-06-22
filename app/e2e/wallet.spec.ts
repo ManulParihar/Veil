@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 const SHOTS = "e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
 
-// Phase-2 real-XLM path, end to end in a real browser:
+// Real-XLM path, end to end in a real browser:
 // create → friendbot-fund → DEPOSIT 2 XLM (real XLM pulled into the pool, real
 // in-browser Groth16 proof, on-chain) → private TRANSFER → WITHDRAW 0.4 XLM to a
 // Stellar address (real XLM released from the pool).

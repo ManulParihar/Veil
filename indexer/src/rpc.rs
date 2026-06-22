@@ -1,7 +1,7 @@
 //! Real Stellar RPC `getEvents` poller implementing [`EventSource`].
 //!
 //! NOTE: this is smoke-compiled, not exercised against a live network in this
-//! plane (deferred to integration). The JSON shapes follow Soroban RPC's
+//! component tests. The JSON shapes follow Soroban RPC's
 //! `getEvents` / `getLatestLedger` methods. Event-value decoding from XDR is
 //! intentionally permissive: it expects the contract to emit the topics in
 //! INTERFACES.md §5 and the indexer to receive already-decoded scval JSON
@@ -12,7 +12,7 @@
 use serde::Deserialize;
 
 use crate::ingest::EventSource;
-use crate::types::{LedgerEvent, VeilEvent};
+use crate::types::{LedgerEvent, PoofEvent};
 
 /// A Soroban RPC `getEvents` poller scoped to one contract id.
 pub struct StellarRpcSource {
@@ -122,26 +122,26 @@ struct RpcEvent {
     value: serde_json::Value,
 }
 
-/// Best-effort decode of a single RPC event into a [`VeilEvent`] per
+/// Best-effort decode of a single RPC event into a [`PoofEvent`] per
 /// INTERFACES.md §5. Returns `None` for unrecognized topics so unrelated
 /// contract events are skipped rather than failing the whole batch.
 ///
 /// Topic[0] is the discriminant symbol: `NewCommitment` / `Nullifier` /
 /// `Transact`. The data tuple is in `value`.
-fn decode_event(ev: &RpcEvent) -> Option<VeilEvent> {
+fn decode_event(ev: &RpcEvent) -> Option<PoofEvent> {
     let tag = ev.topic.first().and_then(scval_symbol)?;
     match tag.as_str() {
         "NewCommitment" => {
             // value = (commitment, leaf_index, ciphertext, view_tag)
             let arr = scval_vec(&ev.value)?;
-            Some(VeilEvent::NewCommitment {
+            Some(PoofEvent::NewCommitment {
                 cm: scval_bytes_hex(arr.first()?)?,
                 leaf_index: scval_u32(arr.get(1)?)?,
                 ciphertext: scval_bytes_hex(arr.get(2)?)?,
                 view_tag: scval_u32(arr.get(3)?)?,
             })
         }
-        "Nullifier" => Some(VeilEvent::Nullifier {
+        "Nullifier" => Some(PoofEvent::Nullifier {
             nf: scval_bytes_hex(&ev.value)?,
         }),
         "Transact" => {
@@ -150,7 +150,7 @@ fn decode_event(ev: &RpcEvent) -> Option<VeilEvent> {
                 Some(arr) => scval_bytes_hex(arr.first()?)?,
                 None => scval_bytes_hex(&ev.value)?,
             };
-            Some(VeilEvent::Transact { root })
+            Some(PoofEvent::Transact { root })
         }
         _ => None,
     }
@@ -209,7 +209,7 @@ mod tests {
         let got = decode_event(&ev).unwrap();
         assert_eq!(
             got,
-            VeilEvent::NewCommitment {
+            PoofEvent::NewCommitment {
                 cm: "aabb".into(),
                 leaf_index: 4,
                 ciphertext: "cafe".into(),
@@ -227,7 +227,7 @@ mod tests {
         };
         assert_eq!(
             decode_event(&nf).unwrap(),
-            VeilEvent::Nullifier { nf: "dead".into() }
+            PoofEvent::Nullifier { nf: "dead".into() }
         );
 
         let tx = RpcEvent {
@@ -237,7 +237,7 @@ mod tests {
         };
         assert_eq!(
             decode_event(&tx).unwrap(),
-            VeilEvent::Transact { root: "b00b".into() }
+            PoofEvent::Transact { root: "b00b".into() }
         );
     }
 

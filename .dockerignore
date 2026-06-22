@@ -1,0 +1,15 @@
+# Keep the indexer image build context lean — only the Rust workspace is needed.
+target
+**/target
+app
+circuits
+deploy
+docs
+node_modules
+**/node_modules
+*.zkey
+*.wtns
+*.r1cs
+.git
+.github
+*.md

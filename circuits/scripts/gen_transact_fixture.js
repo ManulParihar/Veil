@@ -1,12 +1,12 @@
 // Generate a REAL proof + fixture for a native, full-`transact` contract test:
-// a Phase-1 transfer with two zero-value dummy inputs and two zero-value outputs
+// a private transfer with two zero-value dummy inputs and two zero-value outputs
 // (value-conserving, publicAmount=0), bound to the EMPTY ExtData and the
 // contract's genesis root. Exercises extDataHash recompute + real BN254 verify +
 // Merkle insert in one shot.
 //
 // Writes:
 //   - build/transact_input.json   (witness)
-//   - crates/veil-contract/src/transact_fixture.rs (proof + signals for the test)
+//   - crates/poof-contract/src/transact_fixture.rs (proof + signals for the test)
 
 const fs = require("fs");
 const path = require("path");
@@ -37,7 +37,7 @@ const lit = (b) => "[" + Array.from(b).join(", ") + "]";
 // (INTERFACES §4): recipient(32 z) || relayer(32 z) || fee_be(16 z) ||
 // len(ct0)=0 be(4 z) || len(ct1)=0 be(4 z) || tag0(1 z) || tag1(1 z) = 90 zero bytes.
 // The fixed settlement address the fixture binds (a transfer → no funds move).
-// Mirrored in crates/veil-contract/src/transact_e2e_test.rs (SETTLE_G).
+// Mirrored in crates/poof-contract/src/transact_e2e_test.rs (SETTLE_G).
 const SETTLE_G = "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM";
 
 function emptyExtDataHashDec() {
@@ -95,7 +95,7 @@ function emptyExtDataHashDec() {
     const proof = JSON.parse(fs.readFileSync(path.join(__dirname, "../build/transact_proof.json")));
     const pub = JSON.parse(fs.readFileSync(path.join(__dirname, "../build/transact_public.json")));
     let f = `//! GENERATED real-proof fixture for the native full-\`transact\` test
-//! (circuits/scripts/gen_transact_fixture.js). A value-conserving Phase-1
+//! (circuits/scripts/gen_transact_fixture.js). A value-conserving private-transfer
 //! transfer (2 dummy in, 2 zero-value out) bound to the EMPTY ExtData and the
 //! genesis root. Do not edit by hand.
 
@@ -108,7 +108,7 @@ pub const PUBLIC_SIGNALS: [[u8; 32]; ${pub.length}] = [
 ${pub.map((x) => "    " + lit(be32(x)) + ",").join("\n")}
 ];
 `;
-    fs.writeFileSync(path.join(__dirname, "../../crates/veil-contract/src/transact_fixture.rs"), f);
-    console.log("wrote crates/veil-contract/src/transact_fixture.rs");
+    fs.writeFileSync(path.join(__dirname, "../../crates/poof-contract/src/transact_fixture.rs"), f);
+    console.log("wrote crates/poof-contract/src/transact_fixture.rs");
   }
 })();

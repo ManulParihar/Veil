@@ -17,7 +17,7 @@ template DualMux() {
 }
 
 // Standard binary Merkle membership proof.
-// parent = Poseidon(left, right), matching veil-crypto::compress and the
+// parent = Poseidon(left, right), matching poof-crypto::compress and the
 // contract's incremental tree. `pathIndices` is the leaf index; bit i selects
 // whether the running hash is the right child at level i.
 template MerkleProof(levels) {

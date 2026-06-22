@@ -4,7 +4,7 @@ include "poseidon.circom";
 include "keypair.circom";
 
 // Exposes the note pipeline outputs so the test can assert they equal the
-// pinned veil-crypto vectors — i.e. proves the circuit's Poseidon is identical
+// pinned poof-crypto vectors — i.e. proves the circuit's Poseidon is identical
 // to the Rust single-source-of-truth (the cross-impl gate, through the circuit).
 template NoteVec() {
     signal input sk;

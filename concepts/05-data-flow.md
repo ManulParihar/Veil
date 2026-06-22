@@ -2,7 +2,7 @@
 
 ## Private Transfer Flow
 
-This is the main Phase 1 flow.
+This is the main private-transfer flow.
 
 ## 1. Sender Owns A Note
 

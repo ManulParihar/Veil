@@ -1,15 +1,15 @@
 [package]
-name = "veil-indexer"
+name = "poof-indexer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "veil-indexer"
+name = "poof-indexer"
 path = "src/main.rs"
 
 [lib]
-name = "veil_indexer"
+name = "poof_indexer"
 path = "src/lib.rs"
 
 [dependencies]

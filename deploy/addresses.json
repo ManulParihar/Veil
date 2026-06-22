@@ -2,20 +2,25 @@
   "testnet": {
     "network_passphrase": "Test SDF Network ; September 2015",
     "rpc_url": "https://soroban-testnet.stellar.org",
-    "contract_id": "CBFNF4NH3HBQQX66OSSMV3RTPEPMICNGUQSEBG6LVME4543KODNOXJK6",
-    "deployer": "GBCORJIIFOHO4HR22SUL25Q47YS3LA6PUGRB3T46EDMF2VQDCZ3K5DBK",
+    "contract_id": "CDVNLQYWDDH4BJQJBIOWW2CJELVR62FGGVPQN3ZMUNS7PUCIWH3SBLPN",
+    "deployer": "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
     "config": { "levels": 20, "root_history_size": 64 },
     "genesis_root": "2d3c07bea6883428edd2d80d07cec4b911309fed96743822d6aadea06313a951",
     "currencies": {
       "0": { "symbol": "XLM", "decimals": 7, "sac": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC", "asset": "native (XLM)" },
-      "1": { "symbol": "VUSD", "decimals": 7, "sac": "CDVMPZQ47AHENR7K5WEJDLHLZNOQV2VF6TJYOSCPKUEAF5WJ37M3TIPU", "asset": "VUSD:GBCORJIIFOHO4HR22SUL25Q47YS3LA6PUGRB3T46EDMF2VQDCZ3K5DBK" }
+      "1": { "symbol": "VUSD", "decimals": 7, "sac": "CDR3FXAKYZKDXMF53LZM5LIER7SYRKMA2EXGDBO3KODCCBEBCY5XJS64", "asset": "VUSD:GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM" }
     },
-    "phase3": {
-      "note": "Updated deployment with fresh circuit VK (consistent with current zkey).",
-      "deploy_tx": "dc4a6dd44cb48b6b83bd0c364fec55cbe755331654f5543a95e0d1f8cc02e8ad"
+    "current": {
+      "note": "World-A redeploy: contract VK now matches the shipped transaction.zkey, fixing the deposit ProofInvalid (#5). Deployer and VUSD issuer is veil-deployer (GAKON75E), matching app/src/lib/currencies.ts and the VUSD faucet (the previous CBFNF4NH metadata listed a stale deployer and VUSD SAC).",
+      "wasm_hash": "cd166e692eaea294d97f1908841fd7df6c6ad8a7ad4f108181d5407c574638a2",
+      "deploy_ledger": 3219974,
+      "deploy_tx": "06d9ae83c09a37bc4e79764b5a72db354c4e04fb46f21f3d9cd241cb3345acee"
     },
     "history": {
-      "previous": "CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4"
+      "previous": [
+        "CBFNF4NH3HBQQX66OSSMV3RTPEPMICNGUQSEBG6LVME4543KODNOXJK6",
+        "CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4"
+      ]
     }
   }
 }
