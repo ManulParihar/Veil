@@ -65,6 +65,44 @@ The whole flow runs against the live testnet contract today — try it below.
 
 ---
 
+## Privacy & payments features
+
+Beyond the core shielded pool, the wallet ships a set of features that close real
+privacy gaps and make it usable as an actual payments app:
+
+- **🔗 Payment requests & links.** Share a `veil:` URI / QR that encodes your
+  shielded meta-address plus an optional amount, asset and memo. The payer's wallet
+  detects it and prefills the Send form — "Venmo, but shielded." Nothing in the link
+  is spendable. (`app/src/lib/paymentLink.ts`, Receive → *Request payment*.)
+- **👁 Selective disclosure.** Export a read-only **viewing key** (the encryption
+  secret, never the spend key) so an auditor can replay the pool and see everything
+  you *received* — without being able to spend. Generate **proof-of-payment
+  receipts** that open a single note's Poseidon commitment so anyone can verify the
+  exact value existed on-chain. (`app/src/lib/disclosure.ts`, *Disclosure* page.)
+- **🛡 Anonymity-set meter.** Before every Send/Withdraw, see your pool size and how
+  *buried* the funds you're spending are (commitments inserted after them), with a
+  nudge to wait when a note was just deposited. (`app/src/lib/anonymitySet.ts`.)
+- **🎲 Decoy booster.** One click runs randomized-delay self-transfers that fatten
+  the pool and break the deposit→spend timing tell — balance unchanged.
+  (`app/src/lib/decoy.ts`, *Privacy* page.)
+- **🗓 Recurring payments.** Standing private transfers fire on an interval while the
+  wallet is open — proved in your browser, no custodian. (`app/src/lib/schedule.ts`,
+  *Scheduled* page.)
+- **⚡ Gasless withdrawals (relayer).** A relayer submits your in-browser-proved
+  withdraw and pays the Stellar network fee, compensated by an in-proof fee the
+  contract pays it (recipient nets `amount − fee`). Closes the "fee-payer is public"
+  leak — your destination never needs XLM. Both payout legs are bound into
+  `extDataHash`, so the relayer can redirect neither. (`/relayer` service +
+  `app/src/lib/relayer.ts`; needs the fee-settling contract — see below.)
+
+> The first five work against the **live testnet contract** with no redeploy. The
+> relayer's fee settlement is a contract change (`ExtData.relayer_address` + a
+> withdraw fee split); activate it by redeploying (`bash deploy/deploy_testnet.sh`)
+> and setting `VITE_RELAYER_URL` on the frontend. Until then the gasless toggle stays
+> hidden and withdrawals self-submit exactly as before.
+
+---
+
 ## See it in action
 
 A real end-to-end run, captured straight from the [Playwright suite](app/e2e) —
@@ -151,7 +189,8 @@ Full deployment metadata, transaction hashes, and previous contracts live in
 | Circuit | [`circuits`](circuits) | 2-input/2-output Groth16 joinsplit with amount range checks and value conservation |
 | Contract | [`crates/poof-contract`](crates/poof-contract) | Soroban authority for roots, nullifiers, token registry, settlement, and BN254 verification |
 | SDK | [`crates/poof-sdk`](crates/poof-sdk) | Key derivation, note encryption, scanning, Merkle witnesses, proof inputs |
-| Indexer | [`indexer`](indexer) | Durable SQLite-backed event ingestion + read API (the only real backend; optional) |
+| Indexer | [`indexer`](indexer) | Durable SQLite-backed event ingestion + read API (optional) |
+| Relayer | [`relayer`](relayer) | Gasless-withdrawal service: submits a proved withdraw + pays the network fee (optional) |
 | Web app | [`app`](app) | Vite/React wallet for deposits, private sends, withdrawals, and browser proofs |
 
 **The invariant that makes it all work:** Poseidon is bit-identical across Rust,
@@ -350,8 +389,9 @@ cargo test -p poof-sdk --test e2e_prove -- --ignored
 ## Honest limits
 
 - The circuit uses a single-contributor local powers-of-tau and zkey.
-- Fee payers are visible on-chain — relayers are still needed for full submitter
-  privacy.
+- Fee payers are visible on-chain for self-submitted txs. The optional **relayer**
+  (`/relayer`) closes this for withdrawals — gasless, the destination never needs
+  XLM — once the fee-settling contract is deployed and `VITE_RELAYER_URL` is set.
 - Small pools mean small anonymity sets.
 - The wallet scans recent RPC events; the indexer is the durable history path
   (wire it up via `VITE_INDEXER_URL`).
