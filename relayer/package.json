@@ -1,0 +1,21 @@
+{
+  "name": "poof-relayer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Gasless-withdrawal relayer for the Poof shielded pool — submits transact and pays the Stellar network fee, compensated by the in-proof relayer fee.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^16.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2"
+  }
+}

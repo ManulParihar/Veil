@@ -15,6 +15,7 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { LocalSigner, WalletKitSigner, walletSeedFromSignature, type Signer } from "../lib/signer";
 import * as walletkit from "../lib/walletkit";
 import { scanEvents } from "../lib/scan";
+import { relayWithdraw } from "../lib/relayer";
 import { faucetFor, faucetSecret } from "../lib/faucet";
 import { currencyById, toBaseUnits } from "../lib/currencies";
 import { noteKey, selectSpendInputs, spendSelectionError } from "../lib/spendSelection";
@@ -509,6 +510,81 @@ export const useWallet = create<Internal>()(
               return { notes };
             });
           });
+        },
+
+        withdrawViaRelayer: async (currencyId: number, amount: bigint, toStellar: string, relayerAddress: string, fee: bigint) => {
+          const { seedHex } = get();
+          if (!seedHex) throw new Error("no identity");
+          if (fee <= 0n) throw new Error("relayer fee must be positive");
+          if (fee >= amount) throw new Error("relayer fee must be smaller than the amount");
+          set({ busy: true });
+          await get().syncChain();
+          try {
+            assertSyncedTreeRoot(get().currentRoot);
+          } catch (e) {
+            set({ busy: false });
+            throw e;
+          }
+          const keys = ensureKeys(seedHex);
+          const { selected, totalSpendable } = selectSpendInputs(get().notes, T(), keys.publicKey, currencyId, amount);
+          if (!selected) { set({ busy: false }); throw spendSelectionError(totalSpendable, amount); }
+          // The recipient nets `amount - fee`; the relayer is paid `fee`. The
+          // relayer payout address is bound into the proof's extDataHash.
+          const bundle = buildWithdraw({
+            tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
+            inputs: selected.inputs, amount,
+            settlementAddress: toStellar, relayerAddress, fee,
+          });
+          const spentKeys = new Set(selected.notes.map((n) => noteKey(n.note)));
+          const change = selected.change;
+          // leaf positions the two outputs will land at (relayer doesn't echo them)
+          const payer = get().payerPublicKey();
+          const nextBefore = payer ? await chain.getNextLeafIndex(payer).catch(() => null) : null;
+
+          const txId = pushTx({ kind: "withdraw", currencyId, amount, status: "building", stage: "Assembling witness" });
+          try {
+            updateTx(txId, { status: "proving", stage: "Generating zero-knowledge proof" });
+            const { proof, publicSignals } = await prove(bundle.input);
+            updateTx(txId, { status: "submitting", stage: "Relaying (gasless) to Stellar" });
+            const hash = await relayWithdraw(
+              proofToBytes(proof),
+              publicSignalsToBytes(publicSignals),
+              {
+                recipient: bundle.extData.recipient,
+                relayer: bundle.extData.relayer,
+                fee: bundle.extData.fee,
+                ciphertext0: bundle.extData.ciphertexts[0],
+                ciphertext1: bundle.extData.ciphertexts[1],
+                viewTag0: bundle.extData.viewTags[0],
+                viewTag1: bundle.extData.viewTags[1],
+                settlementAddress: bundle.extData.settlementAddress,
+                relayerAddress: bundle.extData.relayerAddress,
+              }
+            );
+            updateTx(txId, { status: "success", hash, stage: undefined });
+            const newRoot = payer ? await chain.getCurrentRoot(payer).catch(() => get().currentRoot ?? "") : (get().currentRoot ?? "");
+            set((s) => {
+              const notes = s.notes.map((n) => (spentKeys.has(noteKey(n.note)) ? { ...n, spent: true } : n));
+              if (change > 0n && nextBefore != null) {
+                notes.push({
+                  note: { amount: change, currencyId, pubkey: keys.publicKey, blinding: bundle.outputs[0].note.blinding },
+                  leafIndex: nextBefore, spent: false, createdAt: now(),
+                });
+              }
+              return {
+                notes,
+                balanceShielded: totalUnspent(notes),
+                balancesByCurrency: balancesByCurrency(notes),
+                currentRoot: newRoot,
+                busy: false,
+              };
+            });
+            return { hash, newRoot, leafIndices: [nextBefore ?? 0, (nextBefore ?? 0) + 1] as [number, number] };
+          } catch (e: any) {
+            updateTx(txId, { status: "error", error: String(e?.message ?? e), stage: undefined });
+            set({ busy: false });
+            throw e;
+          }
         },
       };
     },

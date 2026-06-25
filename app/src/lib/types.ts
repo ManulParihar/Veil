@@ -153,6 +153,10 @@ export interface WalletState {
   send: (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => Promise<TransactResult>;
   deposit: (currencyId: number, amount: bigint) => Promise<TransactResult>;
   withdraw: (currencyId: number, amount: bigint, toStellar: string) => Promise<TransactResult>;
+  /** Gasless withdraw: prove in-browser, then a relayer submits + pays the Stellar
+   *  network fee, compensated by `fee`. Recipient nets `amount - fee`. Requires a
+   *  fee-settling contract + a configured relayer (VITE_RELAYER_URL). */
+  withdrawViaRelayer: (currencyId: number, amount: bigint, toStellar: string, relayerAddress: string, fee: bigint) => Promise<TransactResult>;
   /** Demo helper: create a self-note via a real on-chain private transfer. */
   selfMintDemo: (currencyId: number, amount: bigint) => Promise<TransactResult>;
   /** testnet faucet: drip a custom asset (e.g. VUSD) to the fee account so it can

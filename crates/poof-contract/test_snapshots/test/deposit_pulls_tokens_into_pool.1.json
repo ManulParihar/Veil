@@ -118,7 +118,7 @@
                         "symbol": "ext_data_hash"
                       },
                       "val": {
-                        "bytes": "11f51a1e34216ea86dca6fe7c5ba7849324602d9f2778a536b5c5776b3d10a30"
+                        "bytes": "0ceeb32d8b7e9896e29f948d9d44f34c183031a4951d14f1794da1c51795c63e"
                       }
                     },
                     {
@@ -195,6 +195,14 @@
                       },
                       "val": {
                         "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "relayer_address"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                       }
                     },
                     {
