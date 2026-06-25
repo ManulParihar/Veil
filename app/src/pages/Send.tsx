@@ -3,6 +3,7 @@ import { useWallet } from "../store/wallet";
 import { AmountInput, Spinner, useToast } from "../components/ui";
 import CurrencySelect from "../components/CurrencySelect";
 import TxProgress from "../components/TxProgress";
+import AnonymityMeter from "../components/AnonymityMeter";
 import { currencyById, toBaseUnits, fromBaseUnits, DEFAULT_CURRENCY_ID } from "../lib/currencies";
 import { parsePaymentLink } from "../lib/paymentLink";
 
@@ -123,6 +124,7 @@ export default function Send() {
             </div>
           )}
         </div>
+        <AnonymityMeter currencyId={currencyId} />
         <button data-testid="send-submit" onClick={submit} disabled={busy} className="btn-primary w-full py-3">
           {busy ? <><Spinner /> Proving…</> : "Send privately"}
         </button>

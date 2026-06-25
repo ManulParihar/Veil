@@ -3,6 +3,7 @@ import { useWallet } from "../store/wallet";
 import { AmountInput, Spinner, useToast } from "../components/ui";
 import CurrencySelect from "../components/CurrencySelect";
 import TxProgress from "../components/TxProgress";
+import AnonymityMeter from "../components/AnonymityMeter";
 import { currencyById, toBaseUnits, fromBaseUnits, DEFAULT_CURRENCY_ID } from "../lib/currencies";
 
 // A Stellar account address: G... (56 chars, base32).
@@ -64,6 +65,7 @@ export default function Withdraw() {
           <div className="label">Amount</div>
           <AmountInput value={amount} onChange={setAmount} max={fromBaseUnits(balance, currency.decimals)} unit={currency.symbol} testid="withdraw-amount" />
         </div>
+        <AnonymityMeter currencyId={currencyId} />
         <button data-testid="withdraw-submit" onClick={submit} disabled={busy} className="btn-primary w-full py-3">
           {busy ? <><Spinner /> Proving…</> : "Withdraw to Stellar"}
         </button>
