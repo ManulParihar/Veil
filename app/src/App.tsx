@@ -13,6 +13,7 @@ import Receive from "./pages/Receive";
 import Activity from "./pages/Activity";
 import Privacy from "./pages/Privacy";
 import Disclosure from "./pages/Disclosure";
+import Scheduled from "./pages/Scheduled";
 
 export default function App() {
   const initialised = useWallet((s) => s.initialised);
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/app/activity" element={ready ? <Layout><Activity /></Layout> : <Navigate to="/app/welcome" replace />} />
         <Route path="/app/privacy" element={ready ? <Layout><Privacy /></Layout> : <Navigate to="/app/welcome" replace />} />
         <Route path="/app/disclosure" element={ready ? <Layout><Disclosure /></Layout> : <Navigate to="/app/welcome" replace />} />
+        <Route path="/app/scheduled" element={ready ? <Layout><Scheduled /></Layout> : <Navigate to="/app/welcome" replace />} />
 
         {/* Legacy deep links → keep old bookmarks working */}
         <Route path="/welcome" element={<Navigate to="/app/welcome" replace />} />

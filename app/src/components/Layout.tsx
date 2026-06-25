@@ -4,6 +4,7 @@ import { useWallet } from "../store/wallet";
 import { Logo, AddressBadge, ExplorerLink } from "./ui";
 import PoofSparkle from "./PoofSparkle";
 import { EXPLORER_ACCOUNT } from "../lib/types";
+import { useSchedulePoller } from "../lib/useScheduler";
 
 const NAV = [
   { to: "/app", label: "Dashboard", icon: "M3 12l9-9 9 9M5 10v10h14V10" },
@@ -11,6 +12,7 @@ const NAV = [
   { to: "/app/send", label: "Send", icon: "M5 12h14M13 6l6 6-6 6" },
   { to: "/app/withdraw", label: "Withdraw", icon: "M12 19V5M5 12l7 7 7-7" },
   { to: "/app/receive", label: "Receive", icon: "M19 12H5M11 18l-6-6 6-6" },
+  { to: "/app/scheduled", label: "Scheduled", icon: "M8 2v4M16 2v4M3 10h18M5 6h14a2 2 0 012 2v11a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2" },
   { to: "/app/activity", label: "Activity", icon: "M3 12h4l3 8 4-16 3 8h4" },
   { to: "/app/privacy", label: "Privacy", icon: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" },
   { to: "/app/disclosure", label: "Disclosure", icon: "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7zM12 9a3 3 0 100 6 3 3 0 000-6" },
@@ -27,6 +29,8 @@ function Icon({ d }: { d: string }) {
 export default function Layout({ children }: { children: ReactNode }) {
   const { feeAccount, feeBalance, disconnect } = useWallet();
   const nav = useNavigate();
+  // single background firing loop for recurring payments (runs app-wide)
+  useSchedulePoller();
   return (
     <div className="min-h-full flex">
       <aside className="hidden md:flex w-64 flex-col border-r border-poof-border/50 bg-poof-bg/80 backdrop-blur-xl p-5">
