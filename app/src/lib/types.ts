@@ -4,11 +4,11 @@
 import type { Note } from "./crypto";
 import type { Signer } from "./signer";
 
-export const CONTRACT_ID = "CDVNLQYWDDH4BJQJBIOWW2CJELVR62FGGVPQN3ZMUNS7PUCIWH3SBLPN";
+export const CONTRACT_ID = "CDLDIXFXQHMGQI2P7F4A6JBKFLYCJND7UUSHCZ3TZ5UTZAGOM3WGDMXP";
 /** Ledger the contract was deployed at — the start for a full event scan so the
  *  client Merkle tree includes leaf 0. (RPC retains ~7 days; once the contract is
  *  older than that, the durable indexer is required for full history.) */
-export const CONTRACT_START_LEDGER = 3219974;
+export const CONTRACT_START_LEDGER = 3297796;
 export const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 export const RPC_URL = "https://soroban-testnet.stellar.org";
 export const FRIENDBOT = "https://friendbot.stellar.org";

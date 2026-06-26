@@ -2,8 +2,8 @@
   "testnet": {
     "network_passphrase": "Test SDF Network ; September 2015",
     "rpc_url": "https://soroban-testnet.stellar.org",
-    "contract_id": "CDVNLQYWDDH4BJQJBIOWW2CJELVR62FGGVPQN3ZMUNS7PUCIWH3SBLPN",
-    "deployer": "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
+    "contract_id": "CDLDIXFXQHMGQI2P7F4A6JBKFLYCJND7UUSHCZ3TZ5UTZAGOM3WGDMXP",
+    "deployer": "GBJ3OP2YIMS6H6ETCBCU2I6G3URKEWTOYDSXKA7KQZHC3EHFNYDB7NBU",
     "config": { "levels": 20, "root_history_size": 64 },
     "genesis_root": "2d3c07bea6883428edd2d80d07cec4b911309fed96743822d6aadea06313a951",
     "currencies": {
@@ -11,13 +11,14 @@
       "1": { "symbol": "VUSD", "decimals": 7, "sac": "CDR3FXAKYZKDXMF53LZM5LIER7SYRKMA2EXGDBO3KODCCBEBCY5XJS64", "asset": "VUSD:GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM" }
     },
     "current": {
-      "note": "World-A redeploy: contract VK now matches the shipped transaction.zkey, fixing the deposit ProofInvalid (#5). Deployer and VUSD issuer is veil-deployer (GAKON75E), matching app/src/lib/currencies.ts and the VUSD faucet (the previous CBFNF4NH metadata listed a stale deployer and VUSD SAC).",
-      "wasm_hash": "cd166e692eaea294d97f1908841fd7df6c6ad8a7ad4f108181d5407c574638a2",
-      "deploy_ledger": 3219974,
-      "deploy_tx": "06d9ae83c09a37bc4e79764b5a72db354c4e04fb46f21f3d9cd241cb3345acee"
+      "note": "Relayer-era redeploy: rebuilt poof-contract from current source so ExtData carries the relayer_address field (added in 4241db7), fixing the deposit Error(Object, UnexpectedSize) the prior CDVNLQYW contract threw against the updated frontend. Circuit/VK unchanged, so the shipped transaction.zkey still matches. Pool deployer/admin is a fresh poof-deployer (GBJ3OP2Y); currency 1 re-registers the EXISTING VUSD asset (issuer GAKON75E, SAC CDR3FXAK), so the VUSD faucet (VITE_VUSD_FAUCET_SECRET) is unaffected.",
+      "wasm_hash": "4074dad50e36c56bd3ea77cc59b2df9b5af43a133d2366e07f0edefec95e4c96",
+      "deploy_ledger": 3297796,
+      "deploy_tx": "dc0e69b28d974f6f9cb31bf373dbf5964e697706ddadcb2825d299d790e396a6"
     },
     "history": {
       "previous": [
+        "CDVNLQYWDDH4BJQJBIOWW2CJELVR62FGGVPQN3ZMUNS7PUCIWH3SBLPN",
         "CBFNF4NH3HBQQX66OSSMV3RTPEPMICNGUQSEBG6LVME4543KODNOXJK6",
         "CAJDD2WW3CCD37AO3UTRV56WZOVXOUDVBLB3UVNNVGZYBRHA6MRTVNX4"
       ]
