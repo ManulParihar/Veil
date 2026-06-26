@@ -118,6 +118,50 @@ impl Store {
         Ok(())
     }
 
+    // ── deployment identity / reset ──────────────────────────────────────
+
+    /// The contract id this DB currently holds events for, or `None` on a fresh
+    /// DB. Used at boot to detect a redeploy.
+    pub fn active_contract(&self) -> anyhow::Result<Option<String>> {
+        let conn = self.lock();
+        let v: Option<String> = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'contract_id'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(v)
+    }
+
+    /// Record the contract id this DB holds events for.
+    pub fn set_active_contract(&self, contract_id: &str) -> anyhow::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('contract_id', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![contract_id],
+        )?;
+        Ok(())
+    }
+
+    /// Drop all ingested events and the checkpoint so the loop reseeds from the
+    /// configured start ledger. Used when the watched contract changes — the
+    /// new contract starts a fresh Merkle tree at leaf 0, so old leaves would
+    /// collide on `leaf_index` and corrupt client scans.
+    pub fn reset_events(&self) -> anyhow::Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            "DELETE FROM commitments;
+             DELETE FROM nullifiers;
+             DELETE FROM tree_root;
+             DELETE FROM checkpoint;",
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     // ── reads (API) ──────────────────────────────────────────────────────
 
     /// Notes with `leaf_index >= since_index`, ordered ascending — the client
@@ -300,6 +344,48 @@ mod tests {
         .unwrap();
         assert_eq!(s.nullifiers_since(0).unwrap().len(), 2);
         assert_eq!(s.nullifiers_since(2).unwrap(), vec!["n2".to_string()]);
+    }
+
+    #[test]
+    fn active_contract_roundtrips() {
+        let s = Store::in_memory().unwrap();
+        assert_eq!(s.active_contract().unwrap(), None);
+        s.set_active_contract("CAAA").unwrap();
+        assert_eq!(s.active_contract().unwrap(), Some("CAAA".to_string()));
+        s.set_active_contract("CBBB").unwrap();
+        assert_eq!(s.active_contract().unwrap(), Some("CBBB".to_string()));
+    }
+
+    #[test]
+    fn reset_events_clears_all_tables() {
+        let s = Store::in_memory().unwrap();
+        s.upsert_commitment(&cm_row("aa", 0, 10)).unwrap();
+        s.upsert_nullifier(&NullifierRow {
+            nf: "nf".into(),
+            ledger: 5,
+        })
+        .unwrap();
+        s.set_root("r", 9).unwrap();
+        s.set_checkpoint(100).unwrap();
+
+        s.reset_events().unwrap();
+
+        assert_eq!(s.commitment_count().unwrap(), 0);
+        assert_eq!(s.nullifier_count().unwrap(), 0);
+        assert!(s.root().unwrap().is_none());
+        assert_eq!(s.checkpoint().unwrap(), None);
+    }
+
+    #[test]
+    fn reset_keeps_meta_so_active_contract_survives() {
+        // reset_events wipes events but NOT meta — the caller sets the new
+        // contract id after resetting, and that must persist.
+        let s = Store::in_memory().unwrap();
+        s.set_active_contract("CXXX").unwrap();
+        s.upsert_commitment(&cm_row("aa", 0, 10)).unwrap();
+        s.reset_events().unwrap();
+        assert_eq!(s.active_contract().unwrap(), Some("CXXX".to_string()));
+        assert_eq!(s.commitment_count().unwrap(), 0);
     }
 
     #[test]

@@ -11,10 +11,12 @@
 //! against a mock without a live network.
 
 pub mod api;
+pub mod config;
 pub mod ingest;
 pub mod rpc;
 pub mod store;
 pub mod types;
 
+pub use config::{testnet_deployment, Deployment};
 pub use ingest::{EventSource, DEFAULT_FINALITY_LAG};
 pub use store::Store;

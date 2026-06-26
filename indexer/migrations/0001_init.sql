@@ -38,3 +38,11 @@ CREATE TABLE IF NOT EXISTS tree_root (
     root   TEXT    NOT NULL,                    -- 32-byte root, hex
     ledger INTEGER NOT NULL
 );
+
+-- Key/value metadata. Holds the active contract id (`contract_id`) so a boot can
+-- detect a redeploy and wipe stale leaves before re-ingesting. The DB is not
+-- contract-scoped, so without this a repoint would mix two contracts' trees.
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);

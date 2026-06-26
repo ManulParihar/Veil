@@ -11,6 +11,9 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY indexer ./indexer
+# The indexer embeds deploy/addresses.json (contract id + start ledger) at compile
+# time via include_str!, so the deploy record must be in the build context.
+COPY deploy ./deploy
 # Build only the indexer; other members (e.g. the wasm contract) aren't needed.
 RUN cargo build --release -p poof-indexer
 RUN strip target/release/poof-indexer || true

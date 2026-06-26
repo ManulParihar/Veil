@@ -34,20 +34,27 @@ pub const DEFAULT_FINALITY_LAG: u64 = 5;
 /// Run one ingest tick: fetch from the resume point, apply finality lag, write
 /// finalized events, advance the checkpoint. Returns the number of events
 /// applied this tick. Safe to call repeatedly.
+///
+/// `start_ledger` seeds a fresh DB (no checkpoint): we begin the scan there
+/// rather than at ledger 0, which Soroban RPC rejects ("startLedger must be
+/// positive" / out of retention). It's the contract's deploy ledger, so the
+/// scan still captures leaf 0.
 pub fn ingest_once(
     store: &Store,
     source: &dyn EventSource,
     finality_lag: u64,
+    start_ledger: u64,
 ) -> anyhow::Result<usize> {
     let latest = source.latest_ledger()?;
     // The highest ledger considered final this tick. Saturating so an empty /
     // very young chain doesn't underflow.
     let safe_tip = latest.saturating_sub(finality_lag);
 
-    // Resume point: one past the last fully-ingested ledger (0 if never set).
+    // Resume point: one past the last fully-ingested ledger, or the seed start
+    // ledger on a fresh DB.
     let from = match store.checkpoint()? {
         Some(c) => c + 1,
-        None => 0,
+        None => start_ledger,
     };
 
     // Nothing new is final yet.
@@ -113,14 +120,17 @@ pub async fn run_loop(
     store: Arc<Store>,
     source: Arc<dyn EventSource + Send + Sync>,
     finality_lag: u64,
+    start_ledger: u64,
     poll_interval: std::time::Duration,
 ) {
     loop {
         // Run the (blocking, rusqlite) tick off the async reactor.
         let s = store.clone();
         let src = source.clone();
-        let res =
-            tokio::task::spawn_blocking(move || ingest_once(&s, src.as_ref(), finality_lag)).await;
+        let res = tokio::task::spawn_blocking(move || {
+            ingest_once(&s, src.as_ref(), finality_lag, start_ledger)
+        })
+        .await;
 
         match res {
             Ok(Ok(n)) => {
@@ -194,7 +204,7 @@ mod tests {
         src.push(2, nc("old", 0)); // final → ingested
         src.push(6, nc("young", 1)); // ledger 6 > safe_tip 3 → held back
 
-        let n = ingest_once(&store, &src, 5).unwrap();
+        let n = ingest_once(&store, &src, 5, 0).unwrap();
         assert_eq!(n, 1, "only the final event should be applied");
         assert_eq!(store.commitment_count().unwrap(), 1);
         assert!(store.get_commitment("old").unwrap().is_some());
@@ -203,7 +213,7 @@ mod tests {
 
         // Advance the tip so ledger 6 becomes final, then re-tick.
         src.set_tip(20); // safe_tip = 15
-        let n = ingest_once(&store, &src, 5).unwrap();
+        let n = ingest_once(&store, &src, 5, 0).unwrap();
         assert_eq!(n, 1, "the now-final young event lands");
         assert!(store.get_commitment("young").unwrap().is_some());
         assert_eq!(store.checkpoint().unwrap(), Some(15));
@@ -219,14 +229,14 @@ mod tests {
 
         // First run on one store handle.
         let store = Arc::new(Store::in_memory().unwrap());
-        let n1 = ingest_once(&store, &src, 5).unwrap();
+        let n1 = ingest_once(&store, &src, 5, 0).unwrap();
         assert_eq!(n1, 4);
         let cp = store.checkpoint().unwrap();
         assert_eq!(cp, Some(25));
 
         // "Restart": same DB (same Arc here stands in for reopening the file),
         // re-tick. Nothing new is final → no work, no dupes.
-        let n2 = ingest_once(&store, &src, 5).unwrap();
+        let n2 = ingest_once(&store, &src, 5, 0).unwrap();
         assert_eq!(n2, 0, "resume must not re-ingest finalized ledgers");
         assert_eq!(store.commitment_count().unwrap(), 2);
         assert_eq!(store.nullifier_count().unwrap(), 1);
@@ -235,7 +245,7 @@ mod tests {
         // New event arrives in a later ledger; advance tip and tick again.
         src.push(40, nc("c", 2));
         src.set_tip(50); // safe_tip = 45
-        let n3 = ingest_once(&store, &src, 5).unwrap();
+        let n3 = ingest_once(&store, &src, 5, 0).unwrap();
         assert_eq!(n3, 1, "only the brand-new event, resumed from cp 25");
         assert_eq!(store.commitment_count().unwrap(), 3);
         assert_eq!(store.checkpoint().unwrap(), Some(45));
@@ -250,7 +260,7 @@ mod tests {
         src.push(1, PoofEvent::Nullifier { nf: "nf0".into() });
         src.push(1, PoofEvent::Transact { root: "root0".into() });
 
-        let n = ingest_once(&store, &src, 5).unwrap();
+        let n = ingest_once(&store, &src, 5, 0).unwrap();
         assert_eq!(n, 4);
         assert_eq!(store.commitment_count().unwrap(), 2);
         assert_eq!(store.nullifier_count().unwrap(), 1);
@@ -269,8 +279,24 @@ mod tests {
         // we don't re-scan them forever.
         let store = Store::in_memory().unwrap();
         let src = MockSource::new(10);
-        let n = ingest_once(&store, &src, 5).unwrap();
+        let n = ingest_once(&store, &src, 5, 0).unwrap();
         assert_eq!(n, 0);
         assert_eq!(store.checkpoint().unwrap(), Some(5));
+    }
+
+    #[test]
+    fn fresh_db_seeds_from_start_ledger() {
+        // A fresh DB must begin the scan at `start_ledger`, not 0 — events in
+        // earlier ledgers are skipped (they predate the contract / are out of
+        // RPC retention), and the seed value still captures the deploy ledger.
+        let store = Store::in_memory().unwrap();
+        let src = MockSource::new(1000); // generous tip → all final
+        src.push(50, nc("pre", 0)); // before the seed → must be skipped
+        src.push(150, nc("post", 1)); // at/after the seed → ingested
+
+        let n = ingest_once(&store, &src, 5, 100).unwrap();
+        assert_eq!(n, 1, "only events at/after the start ledger are ingested");
+        assert!(store.get_commitment("pre").unwrap().is_none());
+        assert!(store.get_commitment("post").unwrap().is_some());
     }
 }
