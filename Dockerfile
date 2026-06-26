@@ -30,6 +30,11 @@ ENV POOF_DB_PATH=/data/poof-indexer.db \
     POOF_RPC_URL=https://soroban-testnet.stellar.org \
     RUST_LOG=info
 # POOF_CONTRACT_ID must be supplied at runtime, or it serves the DB read-only.
-VOLUME ["/data"]
+#
+# Persistence: Railway does NOT support the Dockerfile `VOLUME` instruction —
+# attach a Railway Volume to this service with mount path /data instead (Service
+# -> Settings -> Volumes). Fly mounts /data via fly.toml. Create the dir so the
+# binary can write even when no volume is attached (ephemeral in that case).
+RUN mkdir -p /data
 EXPOSE 8080
 ENTRYPOINT ["poof-indexer"]
