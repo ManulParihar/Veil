@@ -66,9 +66,11 @@ export default function Onboarding() {
     return (
       <div className="min-h-full grid place-items-center p-6">
         <div className="w-full max-w-lg space-y-5 animate-fade-in">
-          <div className="text-center relative inline-block">
-            <Logo className="h-12 w-12 mx-auto" />
-            <PoofSparkle active className="w-12 h-12 -mt-3 -mr-3 absolute top-0 right-0" />
+          <div className="text-center">
+            <div className="relative inline-block">
+              <Logo className="h-12 w-12 mx-auto" />
+              <PoofSparkle active className="w-12 h-12 -mt-3 -mr-3 absolute top-0 right-0" />
+            </div>
             <h1 className="text-2xl font-bold mt-3">
               {recovered ? "Welcome back" : isWallet ? "Wallet connected" : "Back up your identity"}
             </h1>
