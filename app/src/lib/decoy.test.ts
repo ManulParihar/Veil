@@ -76,7 +76,10 @@ describe("runDecoyRounds", () => {
 
   it("re-syncs until the leaf count advances before the next round", async () => {
     let leaves = 5;
-    const settleWait = vi.fn().mockImplementation(async () => { leaves = 7; });
+    // Each settle observes the previous round's commitments landing (leaves grow),
+    // so both the between-round settle and the final post-run settle return
+    // promptly instead of waiting out the bounded deadline.
+    const settleWait = vi.fn().mockImplementation(async () => { leaves += 2; });
     const send = vi.fn().mockResolvedValue(undefined);
     const done = await runDecoyRounds({
       rounds: 2, currencyId: 0, minDelaySec: 0, maxDelaySec: 0,
@@ -85,6 +88,23 @@ describe("runDecoyRounds", () => {
     });
     expect(done).toBe(2);
     expect(settleWait).toHaveBeenCalled();
+  });
+
+  it("settles once more after the final round (recovers the last self-sent output)", async () => {
+    // The final settle runs even though there's no round after it, so the last
+    // round's note is trial-decrypted in and the displayed balance doesn't sag.
+    let leaves = 5;
+    const settleWait = vi.fn().mockImplementation(async () => { leaves += 2; });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const done = await runDecoyRounds({
+      rounds: 1, currencyId: 0, minDelaySec: 0, maxDelaySec: 0,
+      send, address: ADDR, balanceOf: () => 10_0000000n,
+      settleWait, nextLeafIndex: () => leaves, retryBackoffMs: 0,
+    });
+    expect(done).toBe(1);
+    // A single round has no between-round settle, so any settle call here is the
+    // post-run one.
+    expect(settleWait).toHaveBeenCalledTimes(1);
   });
 
   it("stops when there's no balance", async () => {

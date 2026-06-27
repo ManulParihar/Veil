@@ -322,9 +322,14 @@ export const useWallet = create<Internal>()(
               signal: ac.signal,
               // Between rounds, settle the previous transfer before the next spend:
               // rapid rounds otherwise pick a change note the RPC hasn't indexed
-              // yet, throwing pre-flight. Route through the same mutex as sends so
-              // it never rebuilds TREE under an in-flight transfer.
-              settleWait: () => runExclusive(() => get().syncChain()),
+              // yet, throwing pre-flight. Use scanForNotes (not syncChain): a decoy
+              // sends to SELF, and only a trial-decrypting scan recovers those
+              // self-sent outputs — syncChain just validates existing notes, so the
+              // displayed balance would sag mid-run until a manual scan. scanForNotes
+              // also rebuilds the tree + advances nextLeafIndex, so settlement
+              // detection still works. Route through the same mutex as sends so it
+              // never rebuilds TREE under an in-flight transfer.
+              settleWait: () => runExclusive(() => get().scanForNotes()),
               nextLeafIndex: () => get().nextLeafIndex,
             });
           } finally {

@@ -99,6 +99,12 @@ export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> 
  * round that fails for such a transient reason is re-synced and RETRIED rather
  * than aborting the whole run on the first hiccup. Only after exhausting the
  * per-round attempts (or on abort / no balance) do we stop.
+ *
+ * After the final round we `settleWait` once more so its self-sent output is
+ * recovered too — the between-round settle runs only BEFORE rounds 2..N, so
+ * without this the last round's note stays unseen until the next manual sync and
+ * the displayed balance sags. (Relies on `settleWait` being a trial-decrypting
+ * scan, not a plain root sync.)
  */
 export async function runDecoyRounds(opts: DecoyOptions): Promise<number> {
   let completed = 0;
@@ -163,6 +169,15 @@ export async function runDecoyRounds(opts: DecoyOptions): Promise<number> {
       }
       break;
     }
+  }
+  // Settle the LAST round so its self-sent output is trial-decrypted back in too
+  // (settleUntilAdvanced runs only before rounds 2..N). settleBaseline is the
+  // pre-send leaf count of the final successful send, so this waits for that
+  // round's commitments to land, then the scan inside settleWait recovers them.
+  // Best-effort: the rounds already succeeded, so a sync hiccup here must not
+  // fail the run, and an abort skips it (balance recovers on the next sync).
+  if (completed > 0 && !opts.signal?.aborted) {
+    try { await settleUntilAdvanced(opts, settleBaseline); } catch { /* recovers on next sync */ }
   }
   return completed;
 }

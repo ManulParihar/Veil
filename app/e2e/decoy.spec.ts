@@ -65,15 +65,12 @@ test("decoy booster runs without the RPC ledger-range error (on-chain)", async (
   expect(finalProgress).not.toMatch(RANGE_RE);
   expect(finalProgress.toLowerCase()).toContain("done");
 
-  // Decoy self-transfers conserve value on-chain, but syncChain only validates
-  // existing notes — it doesn't trial-decrypt to discover NEW incoming notes, so
-  // the just-self-sent outputs surface only after a scan. Run one (it exercises
-  // the hardened scan again) and confirm the FULL balance is restored, proving the
-  // scan is complete and no value was lost.
-  await page.goto("/app/receive");
-  await page.getByTestId("scan-btn").click();
-  await expect(page.getByTestId("scan-btn")).toBeDisabled({ timeout: 10_000 }).catch(() => {});
-  await expect(page.getByTestId("scan-btn")).toBeEnabled({ timeout: 120_000 });
+  // Decoy self-transfers conserve value on-chain. The run's settleWait is now a
+  // trial-decrypting scan (scanForNotes), and we settle once more after the final
+  // round, so every self-sent output — including the last round's — is recovered
+  // *during* the run. The FULL balance must therefore be restored with NO manual
+  // scan: navigate straight to the dashboard and assert it reads 2 again. (This is
+  // the regression guard for the balance sagging mid/post-run.)
   await page.goto("/app");
   await expect(page.getByTestId("balance")).toContainText("2", { timeout: 30_000 });
 
