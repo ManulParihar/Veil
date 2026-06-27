@@ -43,16 +43,48 @@ describe("runDecoyRounds", () => {
     expect(phases.filter((p) => p.phase === "done")).toHaveLength(3);
   });
 
-  it("stops on a send failure", async () => {
+  it("retries a transient send failure within a round instead of aborting", async () => {
     const send = vi.fn()
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("boom"));
+      .mockRejectedValueOnce(new Error("tree lag")) // round 1, attempt 1
+      .mockResolvedValue(undefined);                // round 1 retry + round 2
+    const settleWait = vi.fn().mockResolvedValue(undefined);
+    const done = await runDecoyRounds({
+      rounds: 2, currencyId: 0, minDelaySec: 0, maxDelaySec: 0,
+      send, address: ADDR, balanceOf: () => 10_0000000n,
+      settleWait, retryBackoffMs: 0,
+    });
+    expect(done).toBe(2);
+    // round 1: fail then succeed (2 calls); round 2: succeed (1 call)
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(settleWait).toHaveBeenCalled(); // re-synced before the retry
+  });
+
+  it("stops after exhausting per-round retries", async () => {
+    const send = vi.fn().mockRejectedValue(new Error("boom"));
+    const phases: DecoyRoundInfo[] = [];
     const done = await runDecoyRounds({
       rounds: 5, currencyId: 0, minDelaySec: 0, maxDelaySec: 0,
       send, address: ADDR, balanceOf: () => 10_0000000n,
+      onRound: (i) => phases.push(i),
+      maxAttemptsPerRound: 2, retryBackoffMs: 0,
     });
-    expect(done).toBe(1);
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(done).toBe(0);
+    expect(send).toHaveBeenCalledTimes(2); // 2 attempts on round 1, then stop
+    // the failure is surfaced (not silent)
+    expect(phases.some((p) => p.phase === "error")).toBe(true);
+  });
+
+  it("re-syncs until the leaf count advances before the next round", async () => {
+    let leaves = 5;
+    const settleWait = vi.fn().mockImplementation(async () => { leaves = 7; });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const done = await runDecoyRounds({
+      rounds: 2, currencyId: 0, minDelaySec: 0, maxDelaySec: 0,
+      send, address: ADDR, balanceOf: () => 10_0000000n,
+      settleWait, nextLeafIndex: () => leaves, retryBackoffMs: 0,
+    });
+    expect(done).toBe(2);
+    expect(settleWait).toHaveBeenCalled();
   });
 
   it("stops when there's no balance", async () => {

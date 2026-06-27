@@ -3,6 +3,7 @@
 
 import type { Note } from "./crypto";
 import type { Signer } from "./signer";
+import type { DecoyRoundInfo } from "./decoy";
 
 export const CONTRACT_ID = "CDLDIXFXQHMGQI2P7F4A6JBKFLYCJND7UUSHCZ3TZ5UTZAGOM3WGDMXP";
 /** Ledger the contract was deployed at — the start for a full event scan so the
@@ -153,6 +154,19 @@ export interface WalletState {
   startDelegation: (ttlMs: number) => Promise<void>;
   /** Tear down the active delegation; subsequent transfers prompt the wallet again. */
   revokeDelegation: () => void;
+
+  // decoy booster run (lifted into the store so an in-progress run keeps going and
+  // stays visible across navigation; runtime only — never persisted).
+  /** True while a decoy run is executing. */
+  decoyRunning: boolean;
+  /** Latest per-round progress of the active/last decoy run (null before any run). */
+  decoyProgress: DecoyRoundInfo | null;
+  /** Start a decoy run (randomized self-transfers). Optionally brings up/extends
+   *  the shared session key (reuse-and-extend; not revoked when the run ends).
+   *  Resolves with the number of rounds that completed. */
+  startDecoy: (opts: { rounds: number; currencyId: number; minDelaySec: number; maxDelaySec: number; delegate: boolean }) => Promise<number>;
+  /** Abort the active decoy run (after the current round/await settles). */
+  stopDecoy: () => void;
 
   // accounts
   fundFeeAccount: () => Promise<void>;
