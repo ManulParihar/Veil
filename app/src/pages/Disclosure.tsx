@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWallet } from "../store/wallet";
 import { AddressBadge, SecretReveal, Spinner, useToast } from "../components/ui";
@@ -54,6 +55,13 @@ export default function Disclosure() {
     if (!n) return;
     setGenerated(makeReceiptFromStored(n, CONTRACT_ID));
   };
+
+  // paginate the receipts list — 10 notes per page
+  const RECEIPTS_PAGE_SIZE = 10;
+  const [rcptPage, setRcptPage] = useState(0);
+  const rcptPageCount = Math.max(1, Math.ceil(ownNotes.length / RECEIPTS_PAGE_SIZE));
+  const safeRcptPage = Math.min(rcptPage, rcptPageCount - 1); // clamp without mutating during render
+  const visibleNotes = ownNotes.slice(safeRcptPage * RECEIPTS_PAGE_SIZE, safeRcptPage * RECEIPTS_PAGE_SIZE + RECEIPTS_PAGE_SIZE);
 
   const [rcptInput, setRcptInput] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -169,14 +177,42 @@ export default function Disclosure() {
             {ownNotes.length === 0 ? (
               <p className="text-sm text-poof-muted">No notes to attest yet.</p>
             ) : (
-              <div className="divide-y divide-poof-border rounded-xl border border-poof-border">
-                {ownNotes.map((n, i) => (
-                  <div key={n.leafIndex ?? i} className="flex items-center justify-between px-3 py-2.5">
-                    <span className="text-sm tabular-nums">{formatAmount(n.note.amount, n.note.currencyId)} <span className="text-poof-muted text-xs">leaf #{n.leafIndex}</span></span>
-                    <button data-testid={`gen-receipt-${i}`} onClick={() => generate(i)} className="btn-ghost text-xs px-3 py-1.5">Receipt</button>
+              <>
+                <div className="divide-y divide-poof-border rounded-xl border border-poof-border">
+                  {visibleNotes.map((n, i) => {
+                    const idx = safeRcptPage * RECEIPTS_PAGE_SIZE + i; // global index into ownNotes
+                    return (
+                      <div key={n.leafIndex ?? idx} className="flex items-center justify-between px-3 py-2.5">
+                        <span className="text-sm tabular-nums">{formatAmount(n.note.amount, n.note.currencyId)} <span className="text-poof-muted text-xs">leaf #{n.leafIndex}</span></span>
+                        <button data-testid={`gen-receipt-${idx}`} onClick={() => generate(idx)} className="btn-ghost text-xs px-3 py-1.5">Receipt</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {ownNotes.length > RECEIPTS_PAGE_SIZE && (
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      title="Previous page"
+                      data-testid="receipts-prev"
+                      onClick={() => setRcptPage((p) => Math.max(0, p - 1))}
+                      disabled={safeRcptPage === 0}
+                      className="h-8 w-8 grid place-items-center rounded-lg border border-poof-border text-poof-muted hover:text-poof-text hover:border-poof-lavender transition disabled:opacity-50"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="text-xs text-poof-muted tabular-nums">Page {safeRcptPage + 1} of {rcptPageCount}</span>
+                    <button
+                      title="Next page"
+                      data-testid="receipts-next"
+                      onClick={() => setRcptPage((p) => Math.min(rcptPageCount - 1, p + 1))}
+                      disabled={safeRcptPage >= rcptPageCount - 1}
+                      className="h-8 w-8 grid place-items-center rounded-lg border border-poof-border text-poof-muted hover:text-poof-text hover:border-poof-lavender transition disabled:opacity-50"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
             {generated && (
               <div className="space-y-2 pt-1">

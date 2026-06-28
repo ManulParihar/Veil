@@ -140,17 +140,27 @@ export type SendFn = (currencyId: number, pubkey: string, encPub: string, amount
 
 export interface RunResult { id: string; label: string; status: "success" | "error"; error?: string; }
 
+export interface RunOpts {
+  /** Notified as each schedule's tx starts/ends, so the UI can show live status. */
+  onFire?: (id: string, phase: "start" | "end") => void;
+  /** Clock for the completion anchor (injectable for tests). Defaults to Date.now. */
+  clock?: () => number;
+}
+
 /**
- * Fire every due schedule once. Returns the updated list (with nextRun advanced +
- * run bookkeeping) and a per-payment result set. Runs are sequential so two
- * proofs never contend for the worker, and a failure marks that schedule but does
- * NOT advance it past one interval — it'll retry next tick.
+ * Fire every due schedule once. Returns the updated list (with nextRun re-anchored
+ * on tx completion + run bookkeeping) and a per-payment result set. Runs are
+ * sequential so two proofs never contend for the worker, and the next run is timed
+ * from when the current tx finished (success or error) — so the countdown pauses
+ * while a tx is in flight and restarts fresh, rather than elapsing through it.
  */
 export async function runDue(
   list: ScheduledPayment[],
   send: SendFn,
-  now = Date.now()
+  now = Date.now(),
+  opts: RunOpts = {}
 ): Promise<{ list: ScheduledPayment[]; results: RunResult[] }> {
+  const { onFire, clock = () => Date.now() } = opts;
   const results: RunResult[] = [];
   const byId = new Map(list.map((s) => [s.id, s]));
 
@@ -162,16 +172,23 @@ export async function runDue(
       results.push({ id: s.id, label: s.label, status: "error", error: "invalid amount" });
       continue;
     }
+    onFire?.(s.id, "start");
     try {
       await send(s.currencyId, s.toPubkey, s.toEncPub, amount);
-      const advanced = reschedule({ ...s, lastRun: now, lastStatus: "success", lastError: undefined, runs: s.runs + 1 }, now);
-      byId.set(s.id, advanced);
+      // Re-anchor the next run on completion, not the batch start, so the visible
+      // countdown begins only once this tx finished (one whole interval ahead).
+      const done = clock();
+      byId.set(s.id, { ...s, lastRun: done, lastStatus: "success", lastError: undefined, runs: s.runs + 1, nextRun: done + s.intervalSec * 1000 });
       results.push({ id: s.id, label: s.label, status: "success" });
     } catch (e: any) {
       const err = String(e?.message ?? e);
-      // retry next tick: advance by one interval only so we don't hammer the chain
-      byId.set(s.id, { ...s, lastRun: now, lastStatus: "error", lastError: err, nextRun: now + s.intervalSec * 1000 });
+      // retry one interval after this failure — same completion anchor, so we don't
+      // hammer the chain and the countdown still restarts from the finish.
+      const done = clock();
+      byId.set(s.id, { ...s, lastRun: done, lastStatus: "error", lastError: err, nextRun: done + s.intervalSec * 1000 });
       results.push({ id: s.id, label: s.label, status: "error", error: err });
+    } finally {
+      onFire?.(s.id, "end");
     }
   }
   return { list: [...byId.values()], results };

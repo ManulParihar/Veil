@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWallet } from "../store/wallet";
 import { AddressBadge, AmountInput, Spinner, useToast } from "../components/ui";
@@ -7,12 +8,19 @@ import { currencyById, formatAmount, DEFAULT_CURRENCY_ID } from "../lib/currenci
 import { encodePaymentLink } from "../lib/paymentLink";
 
 type Tab = "address" | "request";
+type NoteFilter = "all" | "unspent" | "spent" | "invalid";
+
+const PAGE_SIZE = 10;
 
 export default function Receive() {
   const { address, notes, scanForNotes, syncing } = useWallet();
   const toast = useToast();
   const [scanning, setScanning] = useState(false);
   const [tab, setTab] = useState<Tab>("address");
+
+  // "Your notes" filter + pagination
+  const [noteFilter, setNoteFilter] = useState<NoteFilter>("all");
+  const [page, setPage] = useState(0);
 
   // request-builder state
   const [amount, setAmount] = useState("");
@@ -24,6 +32,18 @@ export default function Receive() {
   const full = `${address.pubkey}.${address.encPub}`;
   // newest first so freshly-scanned notes surface at the top
   const sortedNotes = [...notes].sort((a, b) => (b.leafIndex ?? 0) - (a.leafIndex ?? 0));
+
+  // Filter + paginate the notes list. The classifier mirrors the badge logic below
+  // so a tab and a note's badge can never disagree.
+  const filtered = sortedNotes.filter((n) => {
+    if (noteFilter === "all") return true;
+    if (noteFilter === "invalid") return !!n.invalidReason;
+    if (noteFilter === "spent") return !n.invalidReason && n.spent;
+    return !n.invalidReason && !n.spent; // unspent
+  });
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1); // clamp without mutating during render
+  const visible = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
   const requestLink = useMemo(() => {
     try {
@@ -144,13 +164,34 @@ export default function Receive() {
       <div className="card p-6">
         <div className="flex items-center justify-between">
           <div className="font-medium">Your notes</div>
-          <span className="text-xs text-poof-muted">{sortedNotes.length} total</span>
+          <span className="text-xs text-poof-muted">{filtered.length} {noteFilter === "all" ? "total" : noteFilter}</span>
         </div>
-        {sortedNotes.length === 0 ? (
-          <p className="text-sm text-poof-muted mt-2">No notes yet. Scan after someone sends to you, or deposit to mint your first note.</p>
+
+        {/* filter tabs */}
+        <div className="mt-3 flex gap-1 rounded-xl bg-poof-surface border border-poof-border p-1">
+          {([["all", "All"], ["unspent", "Unspent"], ["spent", "Spent"], ["invalid", "Invalid"]] as [NoteFilter, string][]).map(([id, lbl]) => (
+            <button
+              key={id}
+              data-testid={`notes-filter-${id}`}
+              onClick={() => { setNoteFilter(id); setPage(0); }}
+              className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition ${
+                noteFilter === id ? "bg-poof-lavender/15 text-poof-lavender shadow-[inset_0_0_0_1px_rgba(167,139,250,0.25)]" : "text-poof-muted hover:text-poof-text"
+              }`}
+            >
+              {lbl}
+            </button>
+          ))}
+        </div>
+
+        {filtered.length === 0 ? (
+          <p className="text-sm text-poof-muted mt-3">
+            {noteFilter === "all"
+              ? "No notes yet. Scan after someone sends to you, or deposit to mint your first note."
+              : `No ${noteFilter} notes.`}
+          </p>
         ) : (
           <div className="mt-3 divide-y divide-poof-border" data-testid="received-notes">
-            {sortedNotes.map((n) => (
+            {visible.map((n) => (
               <div key={n.leafIndex ?? `${n.createdAt}`} className={`py-2.5 ${(n as any).memo ? "border-l-2 border-l-poof-lavender/40 pl-3" : ""}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -180,6 +221,30 @@ export default function Receive() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {filtered.length > PAGE_SIZE && (
+          <div className="mt-4 flex items-center justify-between">
+            <button
+              title="Previous page"
+              data-testid="notes-prev"
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              className="h-8 w-8 grid place-items-center rounded-lg border border-poof-border text-poof-muted hover:text-poof-text hover:border-poof-lavender transition disabled:opacity-50"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="text-xs text-poof-muted tabular-nums">Page {safePage + 1} of {pageCount}</span>
+            <button
+              title="Next page"
+              data-testid="notes-next"
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              disabled={safePage >= pageCount - 1}
+              className="h-8 w-8 grid place-items-center rounded-lg border border-poof-border text-poof-muted hover:text-poof-text hover:border-poof-lavender transition disabled:opacity-50"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
       </div>

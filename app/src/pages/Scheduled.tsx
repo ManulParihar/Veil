@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Play, Pause, Trash2, Plus, Zap, ShieldOff } from "lucide-react";
 import { useWallet } from "../store/wallet";
-import { AmountInput, Spinner, useToast } from "../components/ui";
+import { AmountInput, Spinner, StatusChip, useToast } from "../components/ui";
 import CurrencySelect from "../components/CurrencySelect";
 import IntervalSelect from "../components/IntervalSelect";
-import { useSchedules } from "../lib/useScheduler";
+import { useSchedules, useFiringSchedules } from "../lib/useScheduler";
 import { INTERVALS, DEMO_INTERVAL_SEC } from "../lib/schedule";
 import { parsePaymentLink } from "../lib/paymentLink";
 import { currencyById, toBaseUnits, formatAmount, DEFAULT_CURRENCY_ID } from "../lib/currencies";
@@ -30,9 +30,14 @@ function clockTime(ms: number): string {
 }
 
 export default function Scheduled() {
-  const { address, balancesByCurrency, signerKind, delegateExpiresAt, delegationActive, startDelegation, revokeDelegation } = useWallet();
+  const { address, balancesByCurrency, signerKind, delegateExpiresAt, delegationActive, startDelegation, revokeDelegation, txs } = useWallet();
   const { list, add, remove, toggle, runNow, runningId } = useSchedules();
+  const firing = useFiringSchedules();
   const toast = useToast();
+
+  // Runs are serialized (one tx in flight at a time), so the single non-terminal
+  // tx is the schedule currently firing — surface its live stage in the row.
+  const inflight = txs.find((t) => t.status === "building" || t.status === "proving" || t.status === "submitting");
 
   const [to, setTo] = useState("");
   const [label, setLabel] = useState("");
@@ -192,10 +197,18 @@ export default function Scheduled() {
                       <div className="text-xs text-poof-muted mt-0.5 tabular-nums">
                         {formatAmount(amt, s.currencyId)} · {INTERVALS.find((i) => i.sec === s.intervalSec)?.label ?? `${s.intervalSec}s`}
                       </div>
-                      <div className="text-[11px] text-poof-muted mt-0.5">
-                        {s.active ? `Next ${countdown(s.nextRun)}` : "Paused"} · {s.runs} sent
-                        {underfunded && <span className="text-poof-warn"> · underfunded</span>}
-                      </div>
+                      {firing.has(s.id) || runningId === s.id ? (
+                        <div className="text-[11px] text-poof-gold mt-0.5 flex items-center gap-1.5">
+                          <Spinner className="h-3 w-3" />
+                          <span>{inflight?.stage ?? "Sending…"}</span>
+                          {inflight && <StatusChip status={inflight.status} />}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-poof-muted mt-0.5">
+                          {s.active ? `Next ${countdown(s.nextRun)}` : "Paused"} · {s.runs} sent
+                          {underfunded && <span className="text-poof-warn"> · underfunded</span>}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button title="Run now" data-testid={`sched-run-${s.id}`} onClick={() => runNow(s.id)} disabled={runningId === s.id}

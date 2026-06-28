@@ -125,14 +125,18 @@ interface Internal extends WalletState {
 export const useWallet = create<Internal>()(
   persist(
     (set, get) => {
-      // push/update a tx record helper
+      // push/update a tx record helper. Both mirror the active identity's feed into
+      // txArchive[seedHex] so re-establishing the identity (reload / reconnect / seed
+      // re-import) restores the up-to-date history — not just a disconnect-time snapshot.
+      const withArchive = (s: Internal, txs: TxRecord[]): Partial<Internal> =>
+        s.seedHex ? { txs, txArchive: { ...s.txArchive, [s.seedHex]: txs } } : { txs };
       const pushTx = (rec: Omit<TxRecord, "id" | "createdAt">): string => {
         const id = uid();
-        set((s) => ({ txs: [{ id, createdAt: now(), ...rec }, ...s.txs] }));
+        set((s) => withArchive(s, [{ id, createdAt: now(), ...rec }, ...s.txs]));
         return id;
       };
       const updateTx = (id: string, patch: Partial<TxRecord>) =>
-        set((s) => ({ txs: s.txs.map((t) => (t.id === id ? { ...t, ...patch } : t)) }));
+        set((s) => withArchive(s, s.txs.map((t) => (t.id === id ? { ...t, ...patch } : t))));
 
       // run a witness → prove → submit pipeline, driving a TxRecord
       const runFlow = async (
@@ -525,6 +529,17 @@ export const useWallet = create<Internal>()(
               currentRoot: root,
               nextLeafIndex: T().length,
             });
+
+            // Every freshly-discovered note is an incoming receipt: a payment from
+            // someone else, or one of our own self-sends (decoy boost / a schedule
+            // aimed at our own address) landing back. Record a `receive` entry per
+            // note so the Activity feed shows it. For a self-send this is the inbound
+            // leg that pairs with the `transfer` already logged when it went out.
+            // (Change notes from ordinary outbound transfers are added inline at spend
+            // time, so they're excluded from `fresh` and never miscounted here.)
+            for (const f of fresh) {
+              pushTx({ kind: "receive", currencyId: f.note.currencyId, amount: f.note.amount, status: "success" });
+            }
             return fresh.length;
           } finally {
             set({ syncing: false });

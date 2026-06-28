@@ -31,29 +31,39 @@ describe("schedule logic", () => {
     expect(r.nextRun % 60000).toBe(0);
   });
 
-  it("runDue fires due payments and advances them", async () => {
+  it("runDue fires due payments and re-anchors nextRun on completion", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const list = [base({ id: "a", nextRun: 0 }), base({ id: "b", nextRun: 999999 })];
-    const { list: out, results } = await runDue(list, send, 1000);
+    // inject a fixed completion clock so the next run is timed from when the tx finished
+    const { list: out, results } = await runDue(list, send, 1000, { clock: () => 5000 });
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(0, "1", "a".repeat(64), 10000000n);
     expect(results).toEqual([{ id: "a", label: "Rent", status: "success" }]);
     const a = out.find((s) => s.id === "a")!;
     expect(a.runs).toBe(1);
-    expect(a.nextRun).toBeGreaterThan(1000);
+    expect(a.nextRun).toBe(5000 + 60 * 1000);
+    expect(a.lastRun).toBe(5000);
     expect(a.lastStatus).toBe("success");
   });
 
-  it("runDue records errors and retries next interval (no advance past one)", async () => {
+  it("runDue reports firing start/end for each due schedule", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const list = [base({ id: "a", nextRun: 0 })];
+    const phases: Array<[string, string]> = [];
+    await runDue(list, send, 1000, { onFire: (id, phase) => phases.push([id, phase]) });
+    expect(phases).toEqual([["a", "start"], ["a", "end"]]);
+  });
+
+  it("runDue records errors and retries one interval after completion", async () => {
     const send = vi.fn().mockRejectedValue(new Error("nope"));
     const list = [base({ id: "a", nextRun: 0, intervalSec: 60 })];
-    const { list: out, results } = await runDue(list, send, 1000);
+    const { list: out, results } = await runDue(list, send, 1000, { clock: () => 5000 });
     expect(results[0].status).toBe("error");
     const a = out[0];
     expect(a.lastStatus).toBe("error");
     expect(a.lastError).toContain("nope");
     expect(a.runs).toBe(0);
-    expect(a.nextRun).toBe(1000 + 60 * 1000);
+    expect(a.nextRun).toBe(5000 + 60 * 1000);
   });
 
   it("dueSchedules filters", () => {

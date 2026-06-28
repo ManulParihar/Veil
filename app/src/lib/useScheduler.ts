@@ -15,10 +15,32 @@ import {
 } from "./schedule";
 
 const CHANGED = "poof-schedules-changed";
+const FIRING = "poof-schedule-firing";
 const POLL_MS = 15_000;
 
 function emitChanged() {
   window.dispatchEvent(new CustomEvent(CHANGED));
+}
+
+// Shared "currently firing" set — the single source of truth for which schedules
+// have a tx in flight right now, whether fired by the background poller or the
+// manual "Run now" button. The Scheduled page subscribes via useFiringSchedules()
+// to swap a row's countdown for the live tx stage.
+const firing = new Set<string>();
+function markFiring(id: string, on: boolean) {
+  if (on) firing.add(id); else firing.delete(id);
+  window.dispatchEvent(new CustomEvent(FIRING));
+}
+
+/** Live snapshot of the schedule ids whose tx is in flight right now. */
+export function useFiringSchedules(): Set<string> {
+  const [snap, setSnap] = useState<Set<string>>(() => new Set(firing));
+  useEffect(() => {
+    const refresh = () => setSnap(new Set(firing));
+    window.addEventListener(FIRING, refresh);
+    return () => window.removeEventListener(FIRING, refresh);
+  }, []);
+  return snap;
 }
 
 /** The single background firing loop. Mount once. */
@@ -45,7 +67,9 @@ export function useSchedulePoller() {
       if (dueSchedules(fireable).length === 0) return;
       running.current = true;
       try {
-        const { results, list: outFire } = await runDue(fireable, send);
+        const { results, list: outFire } = await runDue(fireable, send, Date.now(), {
+          onFire: (id, phase) => markFiring(id, phase === "start"),
+        });
         if (cancelled) return;
         // Merge the fired subset back over the full list so deferred (non-Demo)
         // schedules are preserved untouched.
@@ -115,7 +139,9 @@ export function useSchedules() {
     if (!one) return;
     setRunningId(id);
     try {
-      const { list: outOne, results } = await runDue([{ ...one, nextRun: 0, active: true }], send, Date.now());
+      const { list: outOne, results } = await runDue([{ ...one, nextRun: 0, active: true }], send, Date.now(), {
+        onFire: (sid, phase) => markFiring(sid, phase === "start"),
+      });
       // merge the single result back into the full list
       const merged = current.map((s) => (s.id === id ? { ...outOne[0], active: s.active } : s));
       persist(merged);
