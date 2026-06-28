@@ -26,10 +26,51 @@ pub trait EventSource {
 
     /// The latest ledger the source knows about.
     fn latest_ledger(&self) -> anyhow::Result<u64>;
+
+    /// The oldest ledger still retained by the source (its retention floor):
+    /// `getEvents`/`fetch_events` below this point fail permanently. The default
+    /// returns `0` — "no floor, everything is retained" — so a source without
+    /// retention info (e.g. `MockSource`) never trips the aged-cursor self-heal.
+    fn oldest_ledger(&self) -> anyhow::Result<u64> {
+        Ok(0)
+    }
 }
 
 /// Number of confirmations a ledger must be deep before we ingest it.
 pub const DEFAULT_FINALITY_LAG: u64 = 5;
+
+/// What boot-time should do given where the resume cursor sits relative to the
+/// source's retention floor. Decided by [`retention_action`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetentionAction {
+    /// The resume point is still retained — proceed normally.
+    Ok,
+    /// The cursor aged below the floor but the deploy/seed ledger is still
+    /// retained — wipe and reseed from `start_ledger` for a clean rebuild.
+    Reseed,
+    /// Even the deploy/seed ledger aged out — history is permanently lost from
+    /// the source and a full rebuild is impossible without an archival backfill.
+    Unrecoverable,
+}
+
+/// Pure decision for the boot-time aged-cursor self-heal (see `main.rs`).
+///
+/// `resume` is the ledger the next tick would query (`checkpoint + 1`, or
+/// `start_ledger` on a fresh DB); `oldest` is the source's retention floor.
+/// - `resume >= oldest` → [`RetentionAction::Ok`] (the cursor is fine).
+/// - cursor below the floor, but `start_ledger >= oldest` →
+///   [`RetentionAction::Reseed`] (rebuild from the still-retained deploy ledger).
+/// - cursor below the floor and `start_ledger < oldest` →
+///   [`RetentionAction::Unrecoverable`].
+pub fn retention_action(resume: u64, start_ledger: u64, oldest: u64) -> RetentionAction {
+    if resume >= oldest {
+        RetentionAction::Ok
+    } else if start_ledger >= oldest {
+        RetentionAction::Reseed
+    } else {
+        RetentionAction::Unrecoverable
+    }
+}
 
 /// Run one ingest tick: fetch from the resume point, apply finality lag, write
 /// finalized events, advance the checkpoint. Returns the number of events
@@ -298,5 +339,30 @@ mod tests {
         assert_eq!(n, 1, "only events at/after the start ledger are ingested");
         assert!(store.get_commitment("pre").unwrap().is_none());
         assert!(store.get_commitment("post").unwrap().is_some());
+    }
+
+    #[test]
+    fn retention_action_in_window_is_ok() {
+        // Resume point still at/above the floor → nothing to heal.
+        assert_eq!(retention_action(3_300_000, 3_297_796, 3_202_025), RetentionAction::Ok);
+        // Exactly on the floor counts as retained.
+        assert_eq!(retention_action(3_202_025, 3_297_796, 3_202_025), RetentionAction::Ok);
+    }
+
+    #[test]
+    fn retention_action_aged_cursor_reseeds() {
+        // Cursor below the floor, but the deploy ledger is still retained →
+        // wipe and rebuild from start_ledger.
+        assert_eq!(retention_action(3_100_000, 3_297_796, 3_202_025), RetentionAction::Reseed);
+    }
+
+    #[test]
+    fn retention_action_deploy_ledger_aged_out_is_unrecoverable() {
+        // Both the cursor and the deploy ledger have aged below the floor →
+        // the full history can no longer be rebuilt from this source.
+        assert_eq!(
+            retention_action(3_100_000, 3_150_000, 3_202_025),
+            RetentionAction::Unrecoverable
+        );
     }
 }

@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use poof_indexer::ingest;
+use poof_indexer::ingest::EventSource;
 use poof_indexer::rpc::StellarRpcSource;
 use poof_indexer::{testnet_deployment, Store};
 
@@ -76,7 +77,58 @@ async fn main() -> anyhow::Result<()> {
         store.set_active_contract(&contract_id)?;
     }
 
-    let source = Arc::new(StellarRpcSource::new(rpc_url.clone(), contract_id.clone()));
+    // `reqwest::blocking::Client::new()` spins up and immediately drops a
+    // temporary tokio runtime internally (`reqwest::blocking::wait::enter`);
+    // dropping a runtime on the async main thread panics ("Cannot drop a runtime
+    // in a context where blocking is not allowed"). Every blocking request hits
+    // the same path, which is why the ingest loop runs it via `spawn_blocking` —
+    // construct the source on the blocking pool for the same reason.
+    let source = {
+        let rpc_url = rpc_url.clone();
+        let contract_id = contract_id.clone();
+        Arc::new(
+            tokio::task::spawn_blocking(move || StellarRpcSource::new(rpc_url, contract_id)).await?,
+        )
+    };
+
+    // Self-heal an aged-out cursor: if the persisted checkpoint has slid below
+    // the RPC retention floor, every `getEvents` from `checkpoint + 1` fails
+    // with `-32600 startLedger ... out of range` *before* the tick can advance
+    // the cursor, so the loop retries the dead ledger forever. Detect it at boot
+    // and either reseed from the (still-retained) deploy ledger or surface the
+    // unrecoverable case loudly. A transient RPC error here must not block boot.
+    let resume = store.checkpoint()?.map(|c| c + 1).unwrap_or(start_ledger);
+    // `oldest_ledger()` uses the blocking reqwest client; calling it directly on
+    // the async runtime panics on drop ("Cannot drop a runtime ..."), so run it
+    // on the blocking pool like the ingest loop does.
+    let src_health = source.clone();
+    let oldest_res = tokio::task::spawn_blocking(move || src_health.oldest_ledger()).await?;
+    match oldest_res {
+        Ok(oldest) => match ingest::retention_action(resume, start_ledger, oldest) {
+            ingest::RetentionAction::Ok => {}
+            ingest::RetentionAction::Reseed => {
+                tracing::warn!(
+                    resume,
+                    oldest,
+                    start_ledger,
+                    "resume cursor aged below RPC retention floor — reseeding from deploy ledger"
+                );
+                store.reset_events()?;
+            }
+            ingest::RetentionAction::Unrecoverable => {
+                tracing::error!(
+                    resume,
+                    oldest,
+                    start_ledger,
+                    "deploy ledger has aged below RPC retention floor — events permanently lost from RPC; archival backfill required. Read API still serving stale data."
+                );
+            }
+        },
+        Err(e) => {
+            tracing::warn!(error = %e, "could not query RPC retention floor; skipping aged-cursor check");
+        }
+    }
+
     let s = store.clone();
     tracing::info!(
         rpc = %rpc_url,
