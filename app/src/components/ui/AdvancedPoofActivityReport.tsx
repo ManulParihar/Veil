@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useId } from 'react';
 import { motion } from 'framer-motion';
 import CountUp from 'react-countup';
 import {
@@ -228,6 +228,115 @@ const ACTIVITY_STATS: ActivityStat[] = [
   },
 ];
 
+/** Gold-on-ink time-window picker, styled to match the Asset dropdown
+ *  (CurrencySelect) used in the Send flow. A custom listbox instead of a
+ *  native <select> so the open menu carries the app's aesthetic. */
+const TimePeriodSelect: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+}> = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const selected = TIME_PERIOD_OPTIONS.find(o => o.value === value) ?? TIME_PERIOD_OPTIONS[0];
+
+  // Close on outside click or Escape so the menu behaves like a real dropdown.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const pick = (v: string) => {
+    onChange(v);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label="Select time period"
+        className={`group flex items-center gap-2 rounded-xl border bg-poof-surface px-3 py-2
+                    text-left text-sm transition outline-none
+                    ${open
+                      ? 'border-poof-gold ring-2 ring-poof-gold/30'
+                      : 'border-poof-border hover:border-poof-gold/50'}`}
+      >
+        <span className="font-medium text-poof-text whitespace-nowrap">{selected.label}</span>
+        <svg
+          className={`h-4 w-4 text-poof-muted transition-transform duration-200 ${open ? 'rotate-180 text-poof-gold' : ''}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label="Select time period"
+          className="absolute right-0 z-20 mt-2 w-full min-w-max overflow-hidden rounded-xl border border-poof-border
+                     bg-poof-card/95 p-1.5 shadow-glow backdrop-blur-xl animate-fade-in"
+        >
+          {TIME_PERIOD_OPTIONS.map(option => {
+            const active = option.value === value;
+            return (
+              <li key={option.value} role="option" aria-selected={active}>
+                <button
+                  type="button"
+                  onClick={() => pick(option.value)}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition
+                              ${active ? 'bg-poof-gold/10' : 'hover:bg-poof-surface'}`}
+                >
+                  <span className={`flex-1 whitespace-nowrap font-medium ${active ? 'text-poof-gold' : 'text-poof-text'}`}>
+                    {option.label}
+                  </span>
+                  {active && (
+                    <svg
+                      className="h-4 w-4 text-poof-gold"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden
+                    >
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 const AdvancedPoofActivityReport: React.FC = () => {
   const [selectedTimePeriod, setSelectedTimePeriod] = useState<string>(TIME_PERIOD_OPTIONS[0].value);
   const wallet = useWallet();
@@ -241,11 +350,12 @@ const AdvancedPoofActivityReport: React.FC = () => {
   // Derived, real stats from the wallet
   const realNoteCount = wallet.notes.filter(n => !n.spent && !n.invalidReason).length;
   const realTxCount = wallet.txs.length;
-  const transferCount = wallet.txs.filter(t => t.kind === 'transfer').length;
+  // self-sends/decoys are recorded as "self"; count them alongside transfers
+  const transferCount = wallet.txs.filter(t => t.kind === 'transfer' || t.kind === 'self').length;
 
   // Real detailed metrics (with graceful fallbacks)
   const detailedMetrics = useMemo<DetailedMetric[]>(() => {
-    const transfers = wallet.txs.filter(t => t.kind === 'transfer' && t.amount > 0n);
+    const transfers = wallet.txs.filter(t => (t.kind === 'transfer' || t.kind === 'self') && t.amount > 0n);
     const avgTransfer = transfers.length
       ? formatAmount(transfers.reduce((s, t) => s + t.amount, 0n) / BigInt(transfers.length), 0)
       : '—';
@@ -277,18 +387,7 @@ const AdvancedPoofActivityReport: React.FC = () => {
             </div>
             <p className="text-poof-muted text-xs mt-0.5">Your shielded value flows — no one else sees the details.</p>
           </div>
-          <select
-            value={selectedTimePeriod}
-            onChange={(e) => setSelectedTimePeriod(e.target.value)}
-            className="bg-poof-surface text-poof-text border border-poof-border p-2 pt-1.5 pb-1.5 rounded-xl text-sm focus:outline-none focus:border-poof-gold"
-            aria-label="Select time period"
-          >
-            {TIME_PERIOD_OPTIONS.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <TimePeriodSelect value={selectedTimePeriod} onChange={setSelectedTimePeriod} />
         </div>
 
         {/* Legend - Gold/Lavender */}

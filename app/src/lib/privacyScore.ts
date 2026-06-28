@@ -77,7 +77,9 @@ function timingCorrelation(txs: TxRecord[]): PrivacyFactor {
 
   const deposits = txs.filter((t) => t.kind === "deposit" && t.status === "success");
   const withdrawals = txs.filter((t) => t.kind === "withdraw" && t.status === "success");
-  const sends = txs.filter((t) => t.kind === "transfer" && t.status === "success");
+  // a self-send is indistinguishable from an outbound transfer to an adversary, so
+  // it carries the same timing-correlation signature — count both kinds.
+  const sends = txs.filter((t) => (t.kind === "transfer" || t.kind === "self") && t.status === "success");
 
   for (const d of deposits) {
     for (const w of withdrawals) {

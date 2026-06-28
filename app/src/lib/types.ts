@@ -4,6 +4,7 @@
 import type { Note } from "./crypto";
 import type { Signer } from "./signer";
 import type { DecoyRoundInfo } from "./decoy";
+import type { ActivityEntry } from "./activity";
 
 export const CONTRACT_ID = "CDLDIXFXQHMGQI2P7F4A6JBKFLYCJND7UUSHCZ3TZ5UTZAGOM3WGDMXP";
 /** Ledger the contract was deployed at — the start for a full event scan so the
@@ -52,7 +53,11 @@ export interface StoredNote {
 }
 
 export type TxStatus = "building" | "proving" | "submitting" | "success" | "error";
-export type TxKind = "transfer" | "deposit" | "withdraw" | "receive" | "faucet" | "fund";
+export type TxKind = "transfer" | "self" | "deposit" | "withdraw" | "receive" | "faucet" | "fund";
+/** Where a self-transfer originated, when this device performed it. On-chain a
+ *  self-send / decoy / scheduled-self are indistinguishable; this is a best-effort,
+ *  local-only sub-label that degrades to plain "self" on other devices. */
+export type TxSource = "self" | "decoy" | "scheduled";
 
 /** An activity-feed entry. */
 export interface TxRecord {
@@ -67,6 +72,8 @@ export interface TxRecord {
   createdAt: number;
   /** progress note shown in the UI while building/proving/submitting */
   stage?: string;
+  /** For self-transfers (kind === "self"): how it originated on this device. */
+  source?: TxSource;
 }
 
 /** The fee-paying Stellar account (separate from the Poof identity). */
@@ -118,11 +125,22 @@ export interface WalletState {
   /** Per-identity activity archive (keyed by seedHex) so disconnecting and
    *  reconnecting the same identity restores its local history. */
   txArchive: Record<string, TxRecord[]>;
+  /** Typed activity derived from chain events on each scan (deposit / receive /
+   *  transfer / withdraw) — the durable, correctly-classified feed. In-flight
+   *  actions are overlaid from `txs` until a scan picks them up here. */
+  activity: ActivityEntry[];
+  /** Per-identity derived-activity cache (keyed by seedHex) for instant display
+   *  before the first scan after reconnecting. */
+  activityArchive: Record<string, ActivityEntry[]>;
 
   // status flags
   busy: boolean; // a transact is in flight
   syncing: boolean; // a chain sync/scan is running
   feeBalance: string | null; // XLM balance of the fee account (display)
+  /** Runtime-only (never persisted): set by a caller right before a self-send so
+   *  the pushed TxRecord can be tagged "decoy"/"scheduled". Read-and-cleared by the
+   *  flow that creates the record, under the send mutex. */
+  pendingTxSource?: TxSource;
 
   // lifecycle
   createIdentity: (seedHex?: string) => Promise<void>;

@@ -1,16 +1,44 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Filter, Check, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useWallet } from "../store/wallet";
 import { StatusChip, truncate, EmptyState, Spinner, useToast } from "../components/ui";
-import { EXPLORER_TX, type TxKind } from "../lib/types";
+import { EXPLORER_TX, type TxKind, type TxSource, type TxStatus } from "../lib/types";
 import { formatAmount } from "../lib/currencies";
 import PoofLottie from "../components/fx/PoofLottie";
 
+// One unified row for the feed. Most rows are derived from chain events (the
+// durable, correctly-typed history); in-flight/local actions are overlaid from
+// the wallet's optimistic `txs` until a scan picks them up.
+interface FeedRow {
+  id: string;
+  kind: TxKind;
+  status: TxStatus;
+  amount: bigint;
+  currencyId?: number;
+  /** epoch ms — real ledger close time for derived rows, action time for in-flight. */
+  time: number;
+  hash?: string;
+  /** on-chain leaf position, shown as a secondary, always-exact label. */
+  leafIndex?: number;
+  /** for self-transfers: how it originated on this device (decoy/scheduled), if known. */
+  source?: TxSource;
+  error?: string;
+  stage?: string;
+}
+
+// Friendly, pre-cased row labels (CSS `capitalize` would mangle "Self-transfer"
+// into "Self-Transfer", since a hyphen is a word boundary).
+const KIND_LABEL: Record<TxKind, string> = {
+  transfer: "Transfer", self: "Self-transfer", deposit: "Deposit",
+  withdraw: "Withdraw", receive: "Receive", faucet: "Faucet", fund: "Fund",
+};
+
 // Type filters for the Activity feed. Each row groups one or more raw tx kinds
 // under a friendly label so the checkbox menu stays short.
-type TypeFilter = "sent" | "received" | "deposit" | "withdraw" | "funding";
+type TypeFilter = "sent" | "self" | "received" | "deposit" | "withdraw" | "funding";
 const FILTERS: { id: TypeFilter; label: string; kinds: TxKind[] }[] = [
   { id: "sent", label: "Sent", kinds: ["transfer"] },
+  { id: "self", label: "Self-transfer", kinds: ["self"] },
   { id: "received", label: "Received", kinds: ["receive"] },
   { id: "deposit", label: "Deposit", kinds: ["deposit"] },
   { id: "withdraw", label: "Withdraw", kinds: ["withdraw"] },
@@ -23,9 +51,39 @@ const KIND_TO_FILTER = new Map<TxKind, TypeFilter>(
 const PAGE_SIZE = 10;
 
 export default function Activity() {
-  const { txs, scanForNotes, syncing } = useWallet();
+  const { txs, activity, scanForNotes, syncing } = useWallet();
   const toast = useToast();
   const [scanning, setScanning] = useState(false);
+
+  // Merge the durable, chain-derived feed with in-flight/local-only records.
+  // A derived entry is the source of truth for a settled tx; an optimistic `txs`
+  // record is kept only while it's still in flight/errored, is an off-contract
+  // action (faucet/fund — never on the commitment tree), or hasn't been picked
+  // up by a scan yet (its hash isn't in the derived set).
+  const rows = useMemo<FeedRow[]>(() => {
+    const derivedHashes = new Set(activity.map((a) => a.txHash).filter(Boolean) as string[]);
+    // best-effort: the derived feed is durable but source-agnostic; recover the
+    // decoy/scheduled sub-label from the local record of the same tx (this device).
+    const sourceByHash = new Map(
+      txs.filter((t) => t.hash && t.source).map((t) => [t.hash!, t.source!] as const),
+    );
+    const derived: FeedRow[] = activity.map((a) => ({
+      id: a.id, kind: a.kind, status: "success", amount: a.amount,
+      currencyId: a.currencyId, time: a.time, hash: a.txHash, leafIndex: a.leafIndex,
+      source: a.kind === "self" && a.txHash ? sourceByHash.get(a.txHash) : undefined,
+    }));
+    const overlay: FeedRow[] = txs
+      .filter((t) =>
+        t.status !== "success" ||
+        t.kind === "faucet" || t.kind === "fund" ||
+        !(t.hash && derivedHashes.has(t.hash)))
+      .map((t) => ({
+        id: t.id, kind: t.kind, status: t.status, amount: t.amount,
+        currencyId: t.currencyId, time: t.createdAt, hash: t.hash,
+        source: t.source, error: t.error, stage: t.stage,
+      }));
+    return [...derived, ...overlay].sort((a, b) => b.time - a.time);
+  }, [activity, txs]);
 
   // Type filter (multi-select) + pagination. Default is no boxes checked, which
   // behaves identically to every box checked: nothing is filtered out.
@@ -45,11 +103,11 @@ export default function Activity() {
   // selection narrows the feed.
   const narrowed = selected.size > 0 && selected.size < FILTERS.length;
   const filtered = narrowed
-    ? txs.filter((t) => {
+    ? rows.filter((t) => {
         const f = KIND_TO_FILTER.get(t.kind);
         return f ? selected.has(f) : true;
       })
-    : txs;
+    : rows;
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1); // clamp without mutating during render
   const visible = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
@@ -72,7 +130,7 @@ export default function Activity() {
         </div>
         <h1 className="text-2xl font-bold">Activity</h1>
       </div>
-      {txs.length === 0 ? (
+      {rows.length === 0 ? (
         <EmptyState
           title="No activity yet"
           sub="Your transactions will appear here."
@@ -83,7 +141,7 @@ export default function Activity() {
           {/* count + type filter */}
           <div className="flex items-center justify-between">
             <span className="text-xs text-poof-muted">
-              {narrowed ? `${filtered.length} of ${txs.length}` : `${filtered.length} total`}
+              {narrowed ? `${filtered.length} of ${rows.length}` : `${filtered.length} total`}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -160,11 +218,16 @@ export default function Activity() {
                 <div key={t.id} className="px-5 py-4 flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full shrink-0 ${t.kind === "deposit" ? "bg-poof-success" : t.kind === "withdraw" ? "bg-poof-gold" : t.kind === "transfer" ? "bg-poof-lavender" : "bg-poof-accent"}`} />
-                      <span className="capitalize font-medium">{t.kind}</span>
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${t.kind === "deposit" ? "bg-poof-success" : t.kind === "withdraw" ? "bg-poof-gold" : t.kind === "self" ? "bg-poof-muted" : t.kind === "transfer" ? "bg-poof-lavender" : "bg-poof-accent"}`} />
+                      <span className="font-medium">{KIND_LABEL[t.kind] ?? t.kind}</span>
                       <StatusChip status={t.status} />
                     </div>
-                    <div className="text-xs text-poof-muted mt-0.5">{new Date(t.createdAt).toLocaleString()}</div>
+                    <div className="text-xs text-poof-muted mt-0.5">
+                      {t.time > 0 ? new Date(t.time).toLocaleString() : "pending"}
+                      {t.leafIndex != null && <span className="text-poof-muted/70"> · leaf #{t.leafIndex}</span>}
+                      {t.source && t.source !== "self" && <span className="text-poof-muted/70"> · {t.source}</span>}
+                    </div>
+                    {t.stage && <div className="text-xs text-poof-muted mt-0.5">{t.stage}</div>}
                     {t.error && <div className="text-xs text-poof-danger mt-1 max-w-md break-words">{t.error}</div>}
                   </div>
                   <div className="text-right">

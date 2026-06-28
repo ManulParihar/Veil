@@ -267,6 +267,21 @@ export interface CommitmentEvent {
   ciphertext: Uint8Array;
   viewTag: number;
   ledger: number;
+  /** Hash of the transaction that emitted this event — groups the commitments
+   *  and nullifiers of one `transact` so the Activity feed can classify it. */
+  txHash?: string;
+  /** Real ledger close time (epoch ms) — the actual on-chain time the note was
+   *  committed, vs. when the client happened to scan. Absent for indexer rows. */
+  ledgerCloseTime?: number;
+}
+
+/** A `Nullifier(nf)` event — existence marks an input note as spent. Carried with
+ *  its tx hash so a spend can be paired with the outputs from the same transact. */
+export interface NullifierEvent {
+  nf: Uint8Array;
+  ledger: number;
+  txHash?: string;
+  ledgerCloseTime?: number;
 }
 
 // Fetch the full durable commitment history from the indexer's read API.
@@ -367,7 +382,17 @@ export async function scanContractEvents(
   return { events: out, clamped };
 }
 
-export async function getNewCommitments(startLedger?: number): Promise<CommitmentEvent[]> {
+/**
+ * Fetch the contract's `NewCommit` and `Nullifier` events in one scan, each
+ * tagged with its tx hash and ledger close time. Commitments drive the Merkle
+ * tree and note discovery; nullifiers + tx grouping let the Activity feed
+ * classify each transact (deposit / receive / transfer / withdraw) — see
+ * `lib/activity.ts`. The durable indexer backfill restores aged-out commitments
+ * only; nullifier/tx grouping for that prefix is the deferred indexer work.
+ */
+export async function getCommitmentsAndNullifiers(
+  startLedger?: number,
+): Promise<{ commitments: CommitmentEvent[]; nullifiers: NullifierEvent[] }> {
   const s = server();
   // Start from the contract's deploy ledger so the tree includes leaf 0 — a fixed
   // recent window misses the earliest commitments and corrupts the whole tree
@@ -377,18 +402,32 @@ export async function getNewCommitments(startLedger?: number): Promise<Commitmen
   const from = startLedger ?? CONTRACT_START_LEDGER;
   const { events: raw, clamped } = await scanContractEvents(s, CONTRACT_ID, from);
   const out: CommitmentEvent[] = [];
+  const nullifiers: NullifierEvent[] = [];
   for (const ev of raw) {
     const topics = ev.topic.map((t: xdr.ScVal) => scValToNative(t));
-    if (topics[0] !== "NewCommit") continue;
-    const data = scValToNative(ev.value);
-    // tuple (commitment, leaf_index, ciphertext, view_tag)
-    out.push({
-      commitment: Uint8Array.from(data[0] as Uint8Array),
-      leafIndex: Number(data[1]),
-      ciphertext: Uint8Array.from(data[2] as Uint8Array),
-      viewTag: Number(data[3]),
-      ledger: Number(ev.ledger),
-    });
+    const txHash: string | undefined = ev.txHash;
+    const ledgerCloseTime = ev.ledgerClosedAt ? Date.parse(ev.ledgerClosedAt) : undefined;
+    if (topics[0] === "NewCommit") {
+      const data = scValToNative(ev.value);
+      // tuple (commitment, leaf_index, ciphertext, view_tag)
+      out.push({
+        commitment: Uint8Array.from(data[0] as Uint8Array),
+        leafIndex: Number(data[1]),
+        ciphertext: Uint8Array.from(data[2] as Uint8Array),
+        viewTag: Number(data[3]),
+        ledger: Number(ev.ledger),
+        txHash,
+        ledgerCloseTime: Number.isNaN(ledgerCloseTime) ? undefined : ledgerCloseTime,
+      });
+    } else if (topics[0] === "Nullifier") {
+      // value is the bare 32-byte nullifier (not a tuple).
+      nullifiers.push({
+        nf: Uint8Array.from(scValToNative(ev.value) as Uint8Array),
+        ledger: Number(ev.ledger),
+        txHash,
+        ledgerCloseTime: Number.isNaN(ledgerCloseTime) ? undefined : ledgerCloseTime,
+      });
+    }
   }
   // Durable backfill: on a full scan, if RPC retention forced us to start above
   // the deploy ledger (clamped) or the earliest leaf is missing, the tree is
@@ -422,7 +461,13 @@ export async function getNewCommitments(startLedger?: number): Promise<Commitmen
       "tree. Start/repair the poof-indexer (VITE_INDEXER_URL).",
     );
   }
-  return merged;
+  return { commitments: merged, nullifiers };
+}
+
+/** Commitments only — the Merkle-tree / note-discovery path. Thin wrapper over
+ *  {@link getCommitmentsAndNullifiers} so existing callers are unaffected. */
+export async function getNewCommitments(startLedger?: number): Promise<CommitmentEvent[]> {
+  return (await getCommitmentsAndNullifiers(startLedger)).commitments;
 }
 
 export { toHex, fromHex, Address };

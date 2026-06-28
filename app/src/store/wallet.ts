@@ -15,6 +15,7 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { LocalSigner, WalletKitSigner, walletSeedFromSignature, type Signer } from "../lib/signer";
 import * as walletkit from "../lib/walletkit";
 import { scanEvents } from "../lib/scan";
+import { deriveActivity, type ActivityEntry } from "../lib/activity";
 import { relayWithdraw } from "../lib/relayer";
 import { faucetFor, faucetSecret } from "../lib/faucet";
 import { currencyById, toBaseUnits } from "../lib/currencies";
@@ -130,6 +131,11 @@ export const useWallet = create<Internal>()(
       // re-import) restores the up-to-date history — not just a disconnect-time snapshot.
       const withArchive = (s: Internal, txs: TxRecord[]): Partial<Internal> =>
         s.seedHex ? { txs, txArchive: { ...s.txArchive, [s.seedHex]: txs } } : { txs };
+      // Mirror the freshly-derived activity into activityArchive[seedHex] too, so a
+      // reconnect of the same identity shows its last-derived feed instantly (before
+      // the first scan re-derives it from chain).
+      const withActivityArchive = (s: Internal, activity: ActivityEntry[]): Partial<Internal> =>
+        s.seedHex ? { activity, activityArchive: { ...s.activityArchive, [s.seedHex]: activity } } : { activity };
       const pushTx = (rec: Omit<TxRecord, "id" | "createdAt">): string => {
         const id = uid();
         set((s) => withArchive(s, [{ id, createdAt: now(), ...rec }, ...s.txs]));
@@ -149,7 +155,12 @@ export const useWallet = create<Internal>()(
         const { seedHex } = get();
         if (!seedHex) throw new Error("wallet not ready");
         const signer = get().getSigner();
-        const txId = pushTx({ kind, currencyId, amount, status: "building", stage: "Assembling witness" });
+        // Consume any source tag a caller staged for this self-transfer, then clear
+        // it so it can't leak onto an unrelated later record. Safe under the send
+        // mutex (runExclusive serializes transacts).
+        const source = get().pendingTxSource;
+        if (source) set({ pendingTxSource: undefined });
+        const txId = pushTx({ kind, currencyId, amount, source, status: "building", stage: "Assembling witness" });
         try {
           updateTx(txId, { status: "proving", stage: "Generating zero-knowledge proof" });
           const { proof, publicSignals } = await prove(bundle.input);
@@ -228,9 +239,12 @@ export const useWallet = create<Internal>()(
         nextLeafIndex: null,
         txs: [],
         txArchive: {},
+        activity: [],
+        activityArchive: {},
         busy: false,
         syncing: false,
         feeBalance: null,
+        pendingTxSource: undefined,
         _feeSecret: null,
         _delegate: null,
 
@@ -319,7 +333,8 @@ export const useWallet = create<Internal>()(
           try {
             return await runDecoyRounds({
               rounds, currencyId, minDelaySec, maxDelaySec,
-              send: get().send,
+              // tag each round's record as a decoy (best-effort, this device only)
+              send: (c, p, e, a) => { set({ pendingTxSource: "decoy" }); return get().send(c, p, e, a); },
               address: { pubkey: address.pubkey, encPub: address.encPub },
               balanceOf: () => get().balancesByCurrency[currencyId] ?? 0n,
               onRound: (info) => set({ decoyProgress: info }),
@@ -364,6 +379,7 @@ export const useWallet = create<Internal>()(
             notes: [],
             // restore this identity's archived activity (empty for a brand-new seed)
             txs: get().txArchive[hex] ?? [],
+            activity: get().activityArchive[hex] ?? [],
             balanceShielded: 0n,
             balancesByCurrency: {},
           });
@@ -401,6 +417,7 @@ export const useWallet = create<Internal>()(
             notes: [],
             // restore this wallet's archived activity (deterministic seed → stable key)
             txs: get().txArchive[hex] ?? [],
+            activity: get().activityArchive[hex] ?? [],
             balanceShielded: 0n,
             balancesByCurrency: {},
           });
@@ -411,8 +428,9 @@ export const useWallet = create<Internal>()(
 
         disconnect: () => {
           // Snapshot the active identity's activity so reconnecting restores it.
-          const { seedHex, txs, txArchive } = get();
+          const { seedHex, txs, txArchive, activity, activityArchive } = get();
           const archive = seedHex ? { ...txArchive, [seedHex]: txs } : txArchive;
+          const actArchive = seedHex ? { ...activityArchive, [seedHex]: activity } : activityArchive;
           KEYS = null;
           TREE = null;
           decoyAbort?.abort();
@@ -424,7 +442,7 @@ export const useWallet = create<Internal>()(
             decoyRunning: false, decoyProgress: null,
             notes: [], balanceShielded: 0n, balancesByCurrency: {},
             currentRoot: null, nextLeafIndex: null, txs: [], feeBalance: null,
-            txArchive: archive,
+            txArchive: archive, activity: [], activityArchive: actArchive,
           });
         },
 
@@ -440,7 +458,7 @@ export const useWallet = create<Internal>()(
             decoyRunning: false, decoyProgress: null,
             notes: [], balanceShielded: 0n, balancesByCurrency: {},
             currentRoot: null, nextLeafIndex: null, txs: [], feeBalance: null,
-            txArchive: {},
+            txArchive: {}, activity: [], activityArchive: {},
           });
         },
 
@@ -480,7 +498,7 @@ export const useWallet = create<Internal>()(
           const { feeAccount: fa, seedHex } = get();
           set({ syncing: true });
           try {
-            const events = await chain.getNewCommitments();
+            const { commitments: events, nullifiers } = await chain.getCommitmentsAndNullifiers();
             TREE = new ClientMerkleTree();
             T().insertMany(events.map((e) => chain.toHex(e.commitment)).map((h) => BigInt("0x" + h)));
             const root = fa ? await chain.getCurrentRoot(fa.publicKey).catch(() => localRootHex()) : localRootHex();
@@ -488,13 +506,17 @@ export const useWallet = create<Internal>()(
             // Authoritative spent-state reconcile before any spend selection relies
             // on these flags — prevents re-spending an already-spent note (#2).
             if (seedHex) notes = await reconcileSpentOnChain(notes, ensureKeys(seedHex), get().payerPublicKey());
-            set({
+            // Refresh the typed Activity feed too, so a spend's deposit/transfer/
+            // withdraw lands durably without needing a separate manual scan.
+            const activity = seedHex ? deriveActivity(ensureKeys(seedHex), events, nullifiers) : get().activity;
+            set((s) => ({
               currentRoot: root,
               nextLeafIndex: T().length,
               notes,
               balanceShielded: totalUnspent(notes),
               balancesByCurrency: balancesByCurrency(notes),
-            });
+              ...(seedHex ? withActivityArchive(s, activity) : {}),
+            }));
           } finally {
             set({ syncing: false });
           }
@@ -506,7 +528,7 @@ export const useWallet = create<Internal>()(
           const keys = ensureKeys(seedHex);
           set({ syncing: true });
           try {
-            const events = await chain.getNewCommitments();
+            const { commitments: events, nullifiers } = await chain.getCommitmentsAndNullifiers();
             // rebuild tree so leaf indices align
             TREE = new ClientMerkleTree();
             T().insertMany(events.map((e) => BigInt("0x" + chain.toHex(e.commitment))));
@@ -522,24 +544,20 @@ export const useWallet = create<Internal>()(
             // balance double-counts and a spend would fail with NullifierSpent.
             let notes = validateStoredNotes([...get().notes, ...fresh], events, keys.publicKey);
             notes = await reconcileSpentOnChain(notes, keys, get().payerPublicKey());
-            set({
+            // Reconstruct the typed Activity feed from chain events (deposit /
+            // receive / transfer / withdraw), correctly classified and stamped with
+            // the real ledger close time. This replaces the old per-note `receive`
+            // log, which mislabelled every re-discovered note (deposits, change,
+            // decoy self-sends) as "Receive".
+            const activity = deriveActivity(keys, events, nullifiers);
+            set((s) => ({
               notes,
               balanceShielded: totalUnspent(notes),
               balancesByCurrency: balancesByCurrency(notes),
               currentRoot: root,
               nextLeafIndex: T().length,
-            });
-
-            // Every freshly-discovered note is an incoming receipt: a payment from
-            // someone else, or one of our own self-sends (decoy boost / a schedule
-            // aimed at our own address) landing back. Record a `receive` entry per
-            // note so the Activity feed shows it. For a self-send this is the inbound
-            // leg that pairs with the `transfer` already logged when it went out.
-            // (Change notes from ordinary outbound transfers are added inline at spend
-            // time, so they're excluded from `fresh` and never miscounted here.)
-            for (const f of fresh) {
-              pushTx({ kind: "receive", currencyId: f.note.currencyId, amount: f.note.amount, status: "success" });
-            }
+              ...withActivityArchive(s, activity),
+            }));
             return fresh.length;
           } finally {
             set({ syncing: false });
@@ -609,6 +627,13 @@ export const useWallet = create<Internal>()(
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
           const keys = ensureKeys(seedHex);
+          // A send to our own pubkey is a self-transfer (manual self-send, decoy
+          // round, or scheduled-self) — on-chain identical to an outbound transfer,
+          // but it doesn't change our balance, so we label it distinctly. Default
+          // the source tag to "self" unless a caller (decoy/scheduler) already
+          // marked it more specifically.
+          const isSelf = BigInt(toPubkey) === keys.publicKey;
+          if (isSelf && !get().pendingTxSource) set({ pendingTxSource: "self" });
           let selected: Awaited<ReturnType<typeof syncAndSelect>>;
           try {
             selected = await syncAndSelect(keys, currencyId, amount);
@@ -625,7 +650,7 @@ export const useWallet = create<Internal>()(
           });
           const spentKeys = new Set(selected.notes.map((n) => noteKey(n.note)));
           const change = selected.change;
-          return runFlow("transfer", currencyId, amount, bundle, (res) => {
+          return runFlow(isSelf ? "self" : "transfer", currencyId, amount, bundle, (res) => {
             set((s) => {
               const notes = s.notes.map((n) => (spentKeys.has(noteKey(n.note)) ? { ...n, spent: true } : n));
               if (change > 0n) {
@@ -752,7 +777,9 @@ export const useWallet = create<Internal>()(
       partialize: (s) => ({
         initialised: s.initialised, seedHex: s.seedHex, address: s.address,
         feeAccount: s.feeAccount, _feeSecret: s._feeSecret, notes: s.notes,
-        txs: s.txs, txArchive: s.txArchive, balanceShielded: s.balanceShielded,
+        txs: s.txs, txArchive: s.txArchive,
+        activity: s.activity, activityArchive: s.activityArchive,
+        balanceShielded: s.balanceShielded,
         balancesByCurrency: s.balancesByCurrency,
         signerKind: s.signerKind, connectedWalletId: s.connectedWalletId,
         connectedAddress: s.connectedAddress,

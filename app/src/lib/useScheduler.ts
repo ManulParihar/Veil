@@ -67,7 +67,12 @@ export function useSchedulePoller() {
       if (dueSchedules(fireable).length === 0) return;
       running.current = true;
       try {
-        const { results, list: outFire } = await runDue(fireable, send, Date.now(), {
+        // tag each fired send as "scheduled" (best-effort, this device only)
+        const taggedSend: typeof send = (c, p, e, a) => {
+          useWallet.setState({ pendingTxSource: "scheduled" });
+          return send(c, p, e, a);
+        };
+        const { results, list: outFire } = await runDue(fireable, taggedSend, Date.now(), {
           onFire: (id, phase) => markFiring(id, phase === "start"),
         });
         if (cancelled) return;
@@ -139,7 +144,11 @@ export function useSchedules() {
     if (!one) return;
     setRunningId(id);
     try {
-      const { list: outOne, results } = await runDue([{ ...one, nextRun: 0, active: true }], send, Date.now(), {
+      const taggedSend: typeof send = (c, p, e, a) => {
+        useWallet.setState({ pendingTxSource: "scheduled" });
+        return send(c, p, e, a);
+      };
+      const { list: outOne, results } = await runDue([{ ...one, nextRun: 0, active: true }], taggedSend, Date.now(), {
         onFire: (sid, phase) => markFiring(sid, phase === "start"),
       });
       // merge the single result back into the full list

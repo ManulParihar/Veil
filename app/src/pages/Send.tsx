@@ -21,7 +21,9 @@ export default function Send() {
   const toast = useToast();
   const currency = currencyById(currencyId);
   const balance = balancesByCurrency[currencyId] ?? 0n;
-  const tx = started ? txs.find((t) => t.kind === "transfer") : undefined;
+  // sending to your own address is recorded as a self-transfer ("self"), so track
+  // either kind for the in-flight progress display.
+  const tx = started ? txs.find((t) => t.kind === "transfer" || t.kind === "self") : undefined;
 
   // Parse whatever is in the recipient box as a payment request (veil: URI or
   // bare address). Drives both validation and the "request detected" banner.

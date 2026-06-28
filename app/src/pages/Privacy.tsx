@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { motion, type Variants } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { PieChart, PieArcSeries } from "reaviz";
 import {
   ShieldCheck,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useWallet } from "../store/wallet";
 import { analyzePrivacy, type PrivacyFactor, type Recommendation } from "../lib/privacyScore";
+import type { StoredNote } from "../lib/types";
 import { Spinner } from "../components/ui";
 import DecoyBooster from "../components/DecoyBooster";
 import PoofSparkle from "../components/PoofSparkle";
@@ -129,20 +130,87 @@ function FactorCard({ factor, delay }: { factor: PrivacyFactor; delay: number })
   );
 }
 
-function NoteBlock({ amount, currencyId, pct, risky, dominant }: { amount: bigint; currencyId: number; pct: number; risky: boolean; dominant: boolean }) {
+function NoteBlock({ amount, currencyId, risky, dominant }: { amount: bigint; currencyId: number; risky: boolean; dominant: boolean }) {
   const bg = dominant ? "bg-poof-danger/20 border-poof-danger/40" : risky ? "bg-poof-warn/15 border-poof-warn/30" : "bg-poof-success/15 border-poof-success/30";
-  const span = Math.max(1, Math.round(pct / 20));
 
   return (
     <div
-      className={`rounded-xl border p-3 flex flex-col justify-center transition-all ${bg} ${risky || dominant ? "animate-pulse" : ""}`}
-      style={{ gridRowEnd: `span ${span}` }}
+      className={`aspect-square rounded-xl border p-3 flex flex-col justify-center transition-all ${bg} ${risky || dominant ? "animate-pulse" : ""}`}
     >
       <div className="text-sm font-semibold tabular-nums truncate">{formatAmount(amount, currencyId)}</div>
       <div className="text-[10px] text-poof-muted mt-0.5">
         {dominant ? "dominant" : risky ? "round value" : "safe"}
       </div>
     </div>
+  );
+}
+
+function noteIsDominant(amount: bigint, total: bigint): boolean {
+  return total > 0n && (amount * 100n) / total > 60n;
+}
+
+/** Tile priority: dominant first, then round-value, then safe. */
+function notePriority(amount: bigint, total: bigint): number {
+  if (noteIsDominant(amount, total)) return 0;
+  if (isRoundish(amount)) return 1;
+  return 2;
+}
+
+/** Modal popup listing every unspent note in a scrollable square grid. */
+function AllNotesModal({ notes, total, onClose }: { notes: StoredNote[]; total: bigint; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        className="card relative w-full max-w-lg max-h-[80vh] flex flex-col p-5"
+        initial={{ scale: 0.95, opacity: 0, y: 12 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        role="dialog"
+        aria-modal="true"
+      >
+        <SectionHead
+          icon={<LayoutGrid className="h-4 w-4 text-poof-lavender" />}
+          title="All Notes"
+          right={
+            <button onClick={onClose} className="text-xs text-poof-muted hover:text-poof-text transition" aria-label="Close">
+              ✕
+            </button>
+          }
+        />
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 overflow-y-auto pr-1">
+          {notes.map((n, i) => (
+            <NoteBlock
+              key={n.leafIndex ?? i}
+              amount={n.note.amount}
+              currencyId={n.note.currencyId}
+              risky={isRoundish(n.note.amount)}
+              dominant={noteIsDominant(n.note.amount, total)}
+            />
+          ))}
+        </div>
+        <div className="flex items-center gap-4 mt-3 text-[10px] text-poof-muted">
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-poof-success/40" /> safe</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-poof-warn/40" /> round value</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-poof-danger/40" /> dominant</span>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -159,9 +227,12 @@ function RecommendationPill({ rec }: { rec: Recommendation }) {
   );
 }
 
+const MAX_VISIBLE_NOTES = 15;
+
 export default function Privacy() {
   const s = useWallet();
   const [ready, setReady] = useState(false);
+  const [showAllNotes, setShowAllNotes] = useState(false);
 
   useEffect(() => {
     s.syncChain().then(() => setReady(true)).catch(() => setReady(true));
@@ -171,6 +242,12 @@ export default function Privacy() {
   const unspent = s.notes.filter((n) => !n.spent && !n.invalidReason);
   const total = unspent.reduce((sum, n) => sum + n.note.amount, 0n);
   const strongCount = report.factors.filter((f) => f.level === "good").length;
+
+  // Ordered by risk priority: dominant, then round-value, then safe.
+  const sortedNotes = useMemo(
+    () => [...unspent].sort((a, b) => notePriority(a.note.amount, total) - notePriority(b.note.amount, total)),
+    [unspent, total],
+  );
 
   // Value concentration by risk bucket — drives the donut.
   const { donut, donutColors } = useMemo(() => {
@@ -283,21 +360,25 @@ export default function Privacy() {
               title="Note Map"
               right={<span className="text-xs text-poof-muted">{unspent.length} unspent</span>}
             />
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 auto-rows-[58px]">
-              {unspent.map((n, i) => {
-                const pct = total > 0n ? Number((n.note.amount * 100n) / total) : 0;
-                const isDominant = total > 0n && (n.note.amount * 100n) / total > 60n;
-                return (
-                  <NoteBlock
-                    key={n.leafIndex ?? i}
-                    amount={n.note.amount}
-                    currencyId={n.note.currencyId}
-                    pct={pct}
-                    risky={isRoundish(n.note.amount)}
-                    dominant={isDominant}
-                  />
-                );
-              })}
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {(sortedNotes.length > 16 ? sortedNotes.slice(0, MAX_VISIBLE_NOTES) : sortedNotes).map((n, i) => (
+                <NoteBlock
+                  key={n.leafIndex ?? i}
+                  amount={n.note.amount}
+                  currencyId={n.note.currencyId}
+                  risky={isRoundish(n.note.amount)}
+                  dominant={noteIsDominant(n.note.amount, total)}
+                />
+              ))}
+              {sortedNotes.length > 16 && (
+                <button
+                  onClick={() => setShowAllNotes(true)}
+                  className="aspect-square rounded-xl border border-poof-border bg-poof-surface hover:border-poof-lavender hover:bg-poof-lavender/10 transition-all flex flex-col items-center justify-center gap-1 text-center"
+                >
+                  <span className="text-sm font-semibold text-poof-lavender">Show All</span>
+                  <span className="text-[10px] text-poof-muted">+{sortedNotes.length - MAX_VISIBLE_NOTES} more</span>
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-4 mt-3 text-[10px] text-poof-muted">
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-poof-success/40" /> safe</span>
@@ -331,6 +412,12 @@ export default function Privacy() {
       <motion.div variants={fade} initial="hidden" animate="show" custom={5}>
         <DecoyBooster />
       </motion.div>
+
+      <AnimatePresence>
+        {showAllNotes && (
+          <AllNotesModal notes={sortedNotes} total={total} onClose={() => setShowAllNotes(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
