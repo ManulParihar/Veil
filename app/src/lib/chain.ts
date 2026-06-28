@@ -285,56 +285,110 @@ async function getIndexerCommitments(sinceIndex = 0): Promise<CommitmentEvent[]>
   }));
 }
 
-export async function getNewCommitments(startLedger?: number): Promise<CommitmentEvent[]> {
-  const s = server();
-  // Start from the contract's deploy ledger so the tree includes leaf 0 — a fixed
-  // recent window misses the earliest commitments and corrupts the whole tree
-  // (wrong leaf indices → wrong root). Clamp to RPC retention; if the contract is
-  // older than retention, full history needs the durable indexer.
-  const fullScan = startLedger === undefined;
-  let from = startLedger ?? CONTRACT_START_LEDGER;
+// Minimal slice of `rpc.Server` the event scan needs. Declaring it lets the
+// paging/retention logic be unit-tested with a fake server (no network).
+export interface EventScanner {
+  getHealth(): Promise<{ oldestLedger?: number }>;
+  getEvents(req: any): Promise<{ events?: any[]; cursor?: string; latestLedger?: number }>;
+}
+
+/**
+ * Page a contract's events from `from`, tolerating Soroban RPC's rolling ~7-day
+ * retention window. Returns the raw events (caller parses) plus `clamped` — true
+ * when the start ledger had to be raised above `from` because it predated the
+ * retained window, which means the RPC prefix is gone and a complete tree needs
+ * the durable indexer.
+ *
+ * Two retention defenses:
+ *  • Proactive: `getHealth().oldestLedger` is the floor; clamp `from` into range
+ *    up front so `getEvents` is never rejected for being too old (no error to
+ *    scrape, works on every path).
+ *  • Reactive (fallback if getHealth is unavailable): if `getEvents` still rejects
+ *    with "…within the ledger range: <floor> - <latest>", parse the floor and
+ *    clamp up. Only before paging begins (no cursor yet).
+ *
+ * Termination is dead-zone-safe: a clamped scan starts far below the contract's
+ * first event, so the gap pages come back EMPTY but WITH a forward cursor. An
+ * empty page is treated as "caught up to head" only once we've actually collected
+ * events; before that we keep paging through the gap (the old code stopped on the
+ * first empty page and returned an empty, corrupt tree).
+ */
+export async function scanContractEvents(
+  s: EventScanner,
+  contractId: string,
+  from: number,
+): Promise<{ events: any[]; clamped: boolean }> {
   let clamped = false;
+  try {
+    const { oldestLedger } = await s.getHealth();
+    if (oldestLedger && from < oldestLedger) { from = oldestLedger + 1; clamped = true; }
+  } catch { /* best-effort; reactive clamp below still covers a rejection */ }
+
   const LIMIT = 200;
-  const out: CommitmentEvent[] = [];
+  // Budget generously: a clamped scan may traverse a ~109k-ledger gap (~30 empty
+  // pages) before reaching activity; in-range scans finish in a handful.
+  const MAX_PAGES = 400;
+  const out: any[] = [];
   let cursor: string | undefined;
-  for (let page = 0; page < 60; page++) {
-    let resp: any;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let resp: { events?: any[]; cursor?: string };
     try {
       resp = await s.getEvents({
         ...(cursor ? { cursor } : { startLedger: from }),
-        filters: [{ type: "contract", contractIds: [CONTRACT_ID] }],
+        filters: [{ type: "contract", contractIds: [contractId] }],
         limit: LIMIT,
-      } as any);
+      });
     } catch (e: any) {
-      // RPC rejects a startLedger below its retention floor — clamp to it and retry
-      // once (the tree will then be incomplete; the indexer is the durable fix).
-      const m = /(\d{6,})/.exec(String(e?.message ?? e));
-      if (page === 0 && !cursor && m && Number(m[1]) > from) {
+      const msg = String(e?.message ?? e);
+      const m = /(\d{6,})/.exec(msg);
+      // Before paging starts: a too-old startLedger is rejected with the retained
+      // range ("…ledger range: <floor> - <latest>"). Clamp up to the floor (this is
+      // the reactive fallback when getHealth was unavailable) and retry.
+      if (!cursor && m && Number(m[1]) > from) {
         from = Number(m[1]) + 1;
         clamped = true;
         continue;
       }
+      // While paging: the cursor can advance to/just past the chain tip, and the
+      // RPC then rejects it with the SAME "…ledger range…" message instead of
+      // returning an empty page. That only means we've reached head — we already
+      // have every event up to the cursor, so stop cleanly. (This is the common,
+      // intermittent trigger of the user-visible range error: a sync that pages to
+      // the tip and asks for one page too many.)
+      if (cursor && /ledger range/i.test(msg)) break;
       throw e;
     }
     const evs = resp.events ?? [];
-    for (const ev of evs) {
-      const topics = ev.topic.map((t: xdr.ScVal) => scValToNative(t));
-      if (topics[0] !== "NewCommit") continue;
-      const data = scValToNative(ev.value);
-      // tuple (commitment, leaf_index, ciphertext, view_tag)
-      out.push({
-        commitment: Uint8Array.from(data[0] as Uint8Array),
-        leafIndex: Number(data[1]),
-        ciphertext: Uint8Array.from(data[2] as Uint8Array),
-        viewTag: Number(data[3]),
-        ledger: Number(ev.ledger),
-      });
-    }
+    for (const ev of evs) out.push(ev);
     cursor = resp.cursor;
     if (!cursor) break;
-    // events are dense near the contract's activity; an empty page after the
-    // first means we've caught up to head.
-    if (evs.length === 0 && page > 0) break;
+    if (evs.length === 0 && out.length > 0) break; // empty page AFTER data ⇒ at head
+  }
+  return { events: out, clamped };
+}
+
+export async function getNewCommitments(startLedger?: number): Promise<CommitmentEvent[]> {
+  const s = server();
+  // Start from the contract's deploy ledger so the tree includes leaf 0 — a fixed
+  // recent window misses the earliest commitments and corrupts the whole tree
+  // (wrong leaf indices → wrong root). scanContractEvents clamps into RPC
+  // retention; an aged-out prefix is restored from the durable indexer below.
+  const fullScan = startLedger === undefined;
+  const from = startLedger ?? CONTRACT_START_LEDGER;
+  const { events: raw, clamped } = await scanContractEvents(s, CONTRACT_ID, from);
+  const out: CommitmentEvent[] = [];
+  for (const ev of raw) {
+    const topics = ev.topic.map((t: xdr.ScVal) => scValToNative(t));
+    if (topics[0] !== "NewCommit") continue;
+    const data = scValToNative(ev.value);
+    // tuple (commitment, leaf_index, ciphertext, view_tag)
+    out.push({
+      commitment: Uint8Array.from(data[0] as Uint8Array),
+      leafIndex: Number(data[1]),
+      ciphertext: Uint8Array.from(data[2] as Uint8Array),
+      viewTag: Number(data[3]),
+      ledger: Number(ev.ledger),
+    });
   }
   // Durable backfill: on a full scan, if RPC retention forced us to start above
   // the deploy ledger (clamped) or the earliest leaf is missing, the tree is
@@ -355,7 +409,20 @@ export async function getNewCommitments(startLedger?: number): Promise<Commitmen
   const byIdx = new Map<number, CommitmentEvent>();
   for (const e of backfill) byIdx.set(e.leafIndex, e);
   for (const e of out) byIdx.set(e.leafIndex, e);
-  return [...byIdx.values()].sort((a, b) => a.leafIndex - b.leafIndex);
+  const merged = [...byIdx.values()].sort((a, b) => a.leafIndex - b.leafIndex);
+  // If RPC retention forced a clamp and the durable backfill could not restore the
+  // aged-out prefix (indexer empty/unavailable), the tree is missing its earliest
+  // leaves — leaf indices and the root would be wrong. Fail loudly with an
+  // actionable message instead of silently returning a corrupt/empty tree. (Not
+  // reached while the contract is within retention: clamped is false.)
+  if (clamped && (merged.length === 0 || merged[0].leafIndex > 0)) {
+    throw new Error(
+      "Contract event history has aged out of Soroban RPC's ~7-day retention window " +
+      "and the durable indexer returned no data — cannot rebuild the full commitment " +
+      "tree. Start/repair the poof-indexer (VITE_INDEXER_URL).",
+    );
+  }
+  return merged;
 }
 
 export { toHex, fromHex, Address };

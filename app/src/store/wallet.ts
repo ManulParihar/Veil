@@ -20,6 +20,7 @@ import { faucetFor, faucetSecret } from "../lib/faucet";
 import { currencyById, toBaseUnits } from "../lib/currencies";
 import { noteKey, selectSpendInputs, spendSelectionError } from "../lib/spendSelection";
 import { validateStoredNotes } from "../lib/noteValidation";
+import { runDecoyRounds } from "../lib/decoy";
 import {
   type WalletState, type StoredNote, type TxRecord, type FeeAccount, type TransactResult,
   CONTRACT_ID,
@@ -30,6 +31,23 @@ import {
 let KEYS: Keys | null = null;
 let TREE: ClientMerkleTree | null = null;
 const T = (): ClientMerkleTree => (TREE ??= new ClientMerkleTree());
+
+// Abort handle for an in-flight Decoy Booster run. Lives at module scope (sibling
+// to KEYS/TREE) so the run survives the DecoyBooster component unmounting on
+// navigation — the store owns the run, the component just reflects it.
+let decoyAbort: AbortController | null = null;
+
+// Serialize every transacting pipeline (syncChain → prove → submit). Two flows
+// running at once would rebuild the shared TREE under each other and contend for
+// the prover, so a decoy fired while a scheduled payment is in flight must wait
+// its turn rather than fail. The poller's `busy` skip stays as a cheap fast-path.
+let txChain: Promise<unknown> = Promise.resolve();
+function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const run = txChain.then(fn, fn);
+  // keep the chain alive (and unrejected) regardless of this run's outcome
+  txChain = run.then(() => {}, () => {});
+  return run;
+}
 
 function ensureKeys(seedHex: string): Keys {
   if (!KEYS) KEYS = deriveKeys(fromHex(seedHex));
@@ -95,10 +113,6 @@ function treeOutOfSyncError(): Error {
   return new Error(
     "local Merkle tree is incomplete or out of sync with the contract; scan/sync again before spending"
   );
-}
-
-function assertSyncedTreeRoot(currentRoot: string | null): void {
-  if (currentRoot && currentRoot !== localRootHex()) throw treeOutOfSyncError();
 }
 
 interface Internal extends WalletState {
@@ -168,6 +182,33 @@ export const useWallet = create<Internal>()(
         }
       };
 
+      // Resolve spend inputs, tolerating RPC indexing lag. A note that was just
+      // deposited/received (or a change note from a rapid prior spend) may not be
+      // indexed yet when we first sync — the tree root then mismatches or the
+      // selection comes up empty even though the funds exist. So re-sync a few
+      // times (bounded) before giving up, the same lag tolerance decoy runs use.
+      // Returns a non-null selection or throws the most informative error.
+      const syncAndSelect = async (keys: Keys, currencyId: number, amount: bigint) => {
+        const maxAttempts = 5;
+        const backoffMs = 1500;
+        let lastTotal = 0n;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          await get().syncChain();
+          const root = get().currentRoot;
+          if (!root || root === localRootHex()) {
+            const { selected, totalSpendable } = selectSpendInputs(get().notes, T(), keys.publicKey, currencyId, amount);
+            if (selected) return selected;
+            lastTotal = totalSpendable;
+          }
+          if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, backoffMs));
+        }
+        // Exhausted: surface why we couldn't spend (tree still lagging vs. genuinely
+        // insufficient spendable balance).
+        const root = get().currentRoot;
+        if (root && root !== localRootHex()) throw treeOutOfSyncError();
+        throw spendSelectionError(lastTotal, amount);
+      };
+
       return {
         initialised: false,
         seedHex: null,
@@ -188,6 +229,12 @@ export const useWallet = create<Internal>()(
         feeBalance: null,
         _feeSecret: null,
         _delegate: null,
+
+        // Decoy Booster run state (runtime only — never persisted). Lifted into
+        // the store so an in-progress run keeps going and stays visible when the
+        // user navigates away from and back to the Privacy page.
+        decoyRunning: false,
+        decoyProgress: null,
 
         // ── signer accessors ──
         getSigner: (): Signer => {
@@ -223,6 +270,17 @@ export const useWallet = create<Internal>()(
         startDelegation: async (ttlMs: number) => {
           // Local-identity mode already signs silently — nothing to delegate.
           if (get().signerKind !== "wallet") return;
+          // Reuse-and-extend: the session key is shared across Schedule and Decoy.
+          // If a delegation is already live, keep the SAME keypair and only push
+          // the expiry out — never mint a second key (that would orphan whatever
+          // feature minted the first, e.g. running a decoy would silently revoke
+          // the Schedule page's active delegation).
+          const existing = get()._delegate;
+          if (existing && now() < existing.expiresAt) {
+            const expiresAt = Math.max(existing.expiresAt, now() + ttlMs);
+            set({ _delegate: { ...existing, expiresAt }, delegateExpiresAt: expiresAt });
+            return;
+          }
           const kp = Keypair.random();
           // Fund the throwaway account so it can pay Stellar network fees. On
           // testnet friendbot does this for free, with no user signature.
@@ -234,6 +292,53 @@ export const useWallet = create<Internal>()(
         revokeDelegation: () => {
           set({ _delegate: null, delegateExpiresAt: null });
         },
+
+        startDecoy: async ({ rounds, currencyId, minDelaySec, maxDelaySec, delegate }) => {
+          const st = get();
+          if (st.decoyRunning) return 0;
+          const address = st.address;
+          if (!address) return 0;
+          if ((st.balancesByCurrency[currencyId] ?? 0n) <= 0n) {
+            throw new Error("no spendable balance");
+          }
+          // Optionally bring up / extend the SHARED session key. Reuse-and-extend
+          // (see startDelegation); deliberately NOT revoked when the run ends —
+          // it is session-scoped and torn down only from the Schedule page, on
+          // TTL expiry, or on disconnect/reset.
+          if (delegate && st.signerKind === "wallet") {
+            const ttlMs = rounds * (maxDelaySec + 30) * 1000 + 15_000;
+            await get().startDelegation(ttlMs);
+          }
+          const ac = new AbortController();
+          decoyAbort = ac;
+          set({ decoyRunning: true, decoyProgress: null });
+          try {
+            return await runDecoyRounds({
+              rounds, currencyId, minDelaySec, maxDelaySec,
+              send: get().send,
+              address: { pubkey: address.pubkey, encPub: address.encPub },
+              balanceOf: () => get().balancesByCurrency[currencyId] ?? 0n,
+              onRound: (info) => set({ decoyProgress: info }),
+              signal: ac.signal,
+              // Between rounds, settle the previous transfer before the next spend:
+              // rapid rounds otherwise pick a change note the RPC hasn't indexed
+              // yet, throwing pre-flight. Use scanForNotes (not syncChain): a decoy
+              // sends to SELF, and only a trial-decrypting scan recovers those
+              // self-sent outputs — syncChain just validates existing notes, so the
+              // displayed balance would sag mid-run until a manual scan. scanForNotes
+              // also rebuilds the tree + advances nextLeafIndex, so settlement
+              // detection still works. Route through the same mutex as sends so it
+              // never rebuilds TREE under an in-flight transfer.
+              settleWait: () => runExclusive(() => get().scanForNotes()),
+              nextLeafIndex: () => get().nextLeafIndex,
+            });
+          } finally {
+            set({ decoyRunning: false });
+            decoyAbort = null;
+          }
+        },
+
+        stopDecoy: () => { decoyAbort?.abort(); },
 
         createIdentity: async (seedHex?: string) => {
           await initCrypto();
@@ -306,10 +411,13 @@ export const useWallet = create<Internal>()(
           const archive = seedHex ? { ...txArchive, [seedHex]: txs } : txArchive;
           KEYS = null;
           TREE = null;
+          decoyAbort?.abort();
+          decoyAbort = null;
           set({
             initialised: false, seedHex: null, address: null, feeAccount: null,
             signerKind: "local", connectedWalletId: null, connectedAddress: null,
             _feeSecret: null, _delegate: null, delegateExpiresAt: null,
+            decoyRunning: false, decoyProgress: null,
             notes: [], balanceShielded: 0n, balancesByCurrency: {},
             currentRoot: null, nextLeafIndex: null, txs: [], feeBalance: null,
             txArchive: archive,
@@ -319,10 +427,13 @@ export const useWallet = create<Internal>()(
         reset: () => {
           KEYS = null;
           TREE = null;
+          decoyAbort?.abort();
+          decoyAbort = null;
           set({
             initialised: false, seedHex: null, address: null, feeAccount: null,
             signerKind: "local", connectedWalletId: null, connectedAddress: null,
             _feeSecret: null, _delegate: null, delegateExpiresAt: null,
+            decoyRunning: false, decoyProgress: null,
             notes: [], balanceShielded: 0n, balancesByCurrency: {},
             currentRoot: null, nextLeafIndex: null, txs: [], feeBalance: null,
             txArchive: {},
@@ -420,7 +531,7 @@ export const useWallet = create<Internal>()(
           }
         },
 
-        deposit: async (currencyId: number, amount: bigint) => {
+        deposit: async (currencyId: number, amount: bigint) => runExclusive(async () => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
@@ -445,8 +556,10 @@ export const useWallet = create<Internal>()(
               notes: [...s.notes, { note, leafIndex: res.leafIndices[0], spent: false, createdAt: now() }],
             }));
           });
-        },
+        }),
 
+        // Delegates to deposit() (already serialized via runExclusive) — do NOT
+        // wrap again or the nested acquisition would deadlock on the outer run.
         selfMintDemo: async (currencyId: number, amount: bigint) => get().deposit(currencyId, amount),
 
         faucetDrip: async (currencyId: number) => {
@@ -476,20 +589,18 @@ export const useWallet = create<Internal>()(
           }
         },
 
-        send: async (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => {
+        send: async (currencyId: number, toPubkey: string, toEncPub: string, amount: bigint) => runExclusive(async () => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
-          await get().syncChain();
+          const keys = ensureKeys(seedHex);
+          let selected: Awaited<ReturnType<typeof syncAndSelect>>;
           try {
-            assertSyncedTreeRoot(get().currentRoot);
+            selected = await syncAndSelect(keys, currencyId, amount);
           } catch (e) {
             set({ busy: false });
             throw e;
           }
-          const keys = ensureKeys(seedHex);
-          const { selected, totalSpendable } = selectSpendInputs(get().notes, T(), keys.publicKey, currencyId, amount);
-          if (!selected) { set({ busy: false }); throw spendSelectionError(totalSpendable, amount); }
           const bundle = buildTransfer({
             tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
             inputs: selected.inputs,
@@ -511,22 +622,20 @@ export const useWallet = create<Internal>()(
               return { notes };
             });
           });
-        },
+        }),
 
-        withdraw: async (currencyId: number, amount: bigint, toStellar: string) => {
+        withdraw: async (currencyId: number, amount: bigint, toStellar: string) => runExclusive(async () => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           set({ busy: true });
-          await get().syncChain();
+          const keys = ensureKeys(seedHex);
+          let selected: Awaited<ReturnType<typeof syncAndSelect>>;
           try {
-            assertSyncedTreeRoot(get().currentRoot);
+            selected = await syncAndSelect(keys, currencyId, amount);
           } catch (e) {
             set({ busy: false });
             throw e;
           }
-          const keys = ensureKeys(seedHex);
-          const { selected, totalSpendable } = selectSpendInputs(get().notes, T(), keys.publicKey, currencyId, amount);
-          if (!selected) { set({ busy: false }); throw spendSelectionError(totalSpendable, amount); }
           const bundle = buildWithdraw({
             tree: T(), sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
             inputs: selected.inputs, amount,
@@ -546,24 +655,22 @@ export const useWallet = create<Internal>()(
               return { notes };
             });
           });
-        },
+        }),
 
-        withdrawViaRelayer: async (currencyId: number, amount: bigint, toStellar: string, relayerAddress: string, fee: bigint) => {
+        withdrawViaRelayer: async (currencyId: number, amount: bigint, toStellar: string, relayerAddress: string, fee: bigint) => runExclusive(async () => {
           const { seedHex } = get();
           if (!seedHex) throw new Error("no identity");
           if (fee <= 0n) throw new Error("relayer fee must be positive");
           if (fee >= amount) throw new Error("relayer fee must be smaller than the amount");
           set({ busy: true });
-          await get().syncChain();
+          const keys = ensureKeys(seedHex);
+          let selected: Awaited<ReturnType<typeof syncAndSelect>>;
           try {
-            assertSyncedTreeRoot(get().currentRoot);
+            selected = await syncAndSelect(keys, currencyId, amount);
           } catch (e) {
             set({ busy: false });
             throw e;
           }
-          const keys = ensureKeys(seedHex);
-          const { selected, totalSpendable } = selectSpendInputs(get().notes, T(), keys.publicKey, currencyId, amount);
-          if (!selected) { set({ busy: false }); throw spendSelectionError(totalSpendable, amount); }
           // The recipient nets `amount - fee`; the relayer is paid `fee`. The
           // relayer payout address is bound into the proof's extDataHash.
           const bundle = buildWithdraw({
@@ -621,7 +728,7 @@ export const useWallet = create<Internal>()(
             set({ busy: false });
             throw e;
           }
-        },
+        }),
       };
     },
     {

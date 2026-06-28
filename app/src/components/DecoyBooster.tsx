@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Shuffle } from "lucide-react";
 import { useWallet } from "../store/wallet";
 import { Spinner, useToast } from "./ui";
 import CurrencySelect from "./CurrencySelect";
-import { runDecoyRounds, type DecoyRoundInfo } from "../lib/decoy";
+import { type DecoyRoundInfo } from "../lib/decoy";
 import { DEFAULT_CURRENCY_ID, currencyById, formatAmount } from "../lib/currencies";
 
 // Randomized-delay presets (seconds). Real privacy wants gaps; demos want speed.
@@ -14,69 +14,45 @@ const SPEEDS = [
 ] as const;
 
 export default function DecoyBooster() {
-  const { send, address, balancesByCurrency, signerKind, startDelegation, revokeDelegation } = useWallet();
+  // Run state lives in the store so it survives this component unmounting on
+  // navigation; only the form inputs are local.
+  const { address, balancesByCurrency, signerKind, decoyRunning, decoyProgress, startDecoy, stopDecoy } = useWallet();
   const toast = useToast();
   const [currencyId, setCurrencyId] = useState(DEFAULT_CURRENCY_ID);
   const [rounds, setRounds] = useState(3);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]["id"]>("demo");
-  const [running, setRunning] = useState(false);
   const [delegate, setDelegate] = useState(true);
-  const [progress, setProgress] = useState<DecoyRoundInfo | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
+  const running = decoyRunning;
+  const progress: DecoyRoundInfo | null = decoyProgress;
   const balance = balancesByCurrency[currencyId] ?? 0n;
   const sym = currencyById(currencyId).symbol;
   const preset = SPEEDS.find((s) => s.id === speed)!;
   // Only external wallets prompt per-tx; local identities already sign silently.
   const canDelegate = signerKind === "wallet";
-  const useDelegate = canDelegate && delegate;
 
   const start = async () => {
     if (!address) return;
     if (balance <= 0n) { toast.push(`No shielded ${sym} to remix`, "err"); return; }
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setRunning(true);
-    setProgress(null);
-    let delegated = false;
     try {
-      if (useDelegate) {
-        // TTL bounds the session key's life to the worst-case run length plus
-        // per-round proof+submit headroom; revoked again in `finally`.
-        const ttlMs = rounds * (preset.max + 30) * 1000 + 15_000;
-        try {
-          await startDelegation(ttlMs);
-          delegated = true;
-        } catch (e: any) {
-          toast.push(`Couldn't delegate signing: ${e?.message ?? e}`, "err");
-          return;
-        }
-      }
-      const done = await runDecoyRounds({
+      // The session key (if delegated) is shared and session-scoped — startDecoy
+      // reuses/extends it and never revokes it, so a running schedule's delegation
+      // survives the decoy run.
+      const done = await startDecoy({
         rounds, currencyId, minDelaySec: preset.min, maxDelaySec: preset.max,
-        send, address,
-        balanceOf: () => useWallet.getState().balancesByCurrency[currencyId] ?? 0n,
-        onRound: setProgress,
-        signal: ac.signal,
+        delegate: canDelegate && delegate,
       });
-      if (!ac.signal.aborted) {
-        toast.push(done > 0 ? `Ran ${done} decoy transfer${done === 1 ? "" : "s"}` : "No decoys ran", done > 0 ? "ok" : "info");
-      }
+      toast.push(done > 0 ? `Ran ${done} decoy transfer${done === 1 ? "" : "s"}` : "No decoys ran", done > 0 ? "ok" : "info");
     } catch (e: any) {
       toast.push(e?.message ?? "decoy run failed", "err");
-    } finally {
-      if (delegated) revokeDelegation();
-      setRunning(false);
-      setProgress(null);
-      abortRef.current = null;
     }
   };
 
-  const stop = () => abortRef.current?.abort();
+  const stop = () => stopDecoy();
 
   const phaseText = (p: DecoyRoundInfo) =>
     p.phase === "waiting" ? `Round ${p.round}/${p.total} — waiting (random delay)…`
-    : p.phase === "sending" ? `Round ${p.round}/${p.total} — remixing ${formatAmount(p.amount, currencyId)}…`
+    : p.phase === "sending" ? `Round ${p.round}/${p.total} — remixing ${formatAmount(p.amount, p.currencyId)}…`
     : p.phase === "done" ? `Round ${p.round}/${p.total} — done`
     : `Round ${p.round}/${p.total} — ${p.error}`;
 
