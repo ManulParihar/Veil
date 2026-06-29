@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { commitment, deriveKeys, fieldToBytes, initCrypto, type Note } from "./crypto";
 import { ClientMerkleTree } from "./merkleTree";
 import { DEFAULT_CURRENCY_ID } from "./currencies";
-import { noteKey, selectSpendInputs, spendSelectionError } from "./spendSelection";
+import { noteKey, planConsolidation, selectSpendInputs, spendSelectionError } from "./spendSelection";
 import type { StoredNote } from "./types";
 
 beforeAll(async () => { await initCrypto(); });
@@ -89,5 +89,82 @@ describe("spend input selection", () => {
     expect(result.totalSpendable).toBe(5n);
     expect(result.selected?.inputs).toHaveLength(1);
     expect(result.selected?.inputs[0].note).toBe(valid);
+  });
+});
+
+describe("consolidation planning", () => {
+  const keys = () => deriveKeys(fieldToBytes(7777n));
+
+  // Build a tree of `count` equal-value (value=1) notes for one identity.
+  const buildNotes = (count: number) => {
+    const k = keys();
+    const tree = new ClientMerkleTree();
+    const notes: StoredNote[] = [];
+    for (let i = 0; i < count; i++) {
+      const note: Note = { amount: 1n, currencyId: DEFAULT_CURRENCY_ID, pubkey: k.publicKey, blinding: BigInt(i + 1) };
+      notes.push(stored(note, tree.insert(commitment(note))));
+    }
+    return { k, tree, notes };
+  };
+
+  // Spending the FULL balance forces the covering set to be all `count` notes.
+  const planAll = (count: number) => {
+    const { k, tree, notes } = buildNotes(count);
+    return planConsolidation(notes, tree, k.publicKey, DEFAULT_CURRENCY_ID, BigInt(count));
+  };
+
+  it("needs no merge when ≤2 notes cover the amount", () => {
+    const { plan } = planAll(2);
+    expect(plan?.noteCount).toBe(2);
+    expect(plan?.rounds).toBe(0);
+    expect(plan?.totalMerges).toBe(0);
+  });
+
+  it("k=3 → 1 round, 1 merge", () => {
+    const { plan } = planAll(3);
+    expect(plan?.noteCount).toBe(3);
+    expect(plan?.rounds).toBe(1);
+    expect(plan?.totalMerges).toBe(1);
+  });
+
+  it("k=4 → 1 round, 2 merges (silent threshold)", () => {
+    const { plan } = planAll(4);
+    expect(plan?.rounds).toBe(1);
+    expect(plan?.totalMerges).toBe(2);
+  });
+
+  it("k=5 → 2 rounds (warn threshold)", () => {
+    const { plan } = planAll(5);
+    expect(plan?.noteCount).toBe(5);
+    expect(plan?.rounds).toBe(2);
+    expect(plan?.totalMerges).toBe(3);
+  });
+
+  it("k=8 → 2 rounds, 6 merges (reduce-to-2)", () => {
+    const { plan } = planAll(8);
+    expect(plan?.rounds).toBe(2);
+    expect(plan?.totalMerges).toBe(6);
+  });
+
+  it("covering set is the smallest largest-first subset, not the whole balance", () => {
+    const k = keys();
+    const tree = new ClientMerkleTree();
+    // amounts 10,1,1,1,1 — spending 10 needs just the single 10 note (k=1).
+    const amounts = [10n, 1n, 1n, 1n, 1n];
+    const notes = amounts.map((amount, i) =>
+      stored({ amount, currencyId: DEFAULT_CURRENCY_ID, pubkey: k.publicKey, blinding: BigInt(i + 1) }, tree.insert(commitment({ amount, currencyId: DEFAULT_CURRENCY_ID, pubkey: k.publicKey, blinding: BigInt(i + 1) }))));
+    const { plan } = planConsolidation(notes, tree, k.publicKey, DEFAULT_CURRENCY_ID, 10n);
+    expect(plan?.noteCount).toBe(1);
+    expect(plan?.rounds).toBe(0);
+  });
+
+  it("returns null when the balance can't cover the amount", () => {
+    const { plan, totalSpendable } = planAll(3); // total = 3
+    expect(plan).not.toBeNull();
+    const { k, tree, notes } = buildNotes(3);
+    const res = planConsolidation(notes, tree, k.publicKey, DEFAULT_CURRENCY_ID, 99n);
+    expect(res.plan).toBeNull();
+    expect(res.totalSpendable).toBe(3n);
+    expect(totalSpendable).toBe(3n);
   });
 });

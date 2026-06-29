@@ -219,13 +219,13 @@ export default function Activity() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className={`h-2 w-2 rounded-full shrink-0 ${t.kind === "deposit" ? "bg-poof-success" : t.kind === "withdraw" ? "bg-poof-gold" : t.kind === "self" ? "bg-poof-muted" : t.kind === "transfer" ? "bg-poof-lavender" : "bg-poof-accent"}`} />
-                      <span className="font-medium">{KIND_LABEL[t.kind] ?? t.kind}</span>
+                      <span className="font-medium">{t.source === "merge" ? "Note merge" : KIND_LABEL[t.kind] ?? t.kind}</span>
                       <StatusChip status={t.status} />
                     </div>
                     <div className="text-xs text-poof-muted mt-0.5">
                       {t.time > 0 ? new Date(t.time).toLocaleString() : "pending"}
                       {t.leafIndex != null && <span className="text-poof-muted/70"> · leaf #{t.leafIndex}</span>}
-                      {t.source && t.source !== "self" && <span className="text-poof-muted/70"> · {t.source}</span>}
+                      {t.source && t.source !== "self" && t.source !== "merge" && <span className="text-poof-muted/70"> · {t.source}</span>}
                     </div>
                     {t.stage && <div className="text-xs text-poof-muted mt-0.5">{t.stage}</div>}
                     {t.error && <div className="text-xs text-poof-danger mt-1 max-w-md break-words">{t.error}</div>}

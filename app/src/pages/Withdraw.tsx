@@ -4,20 +4,28 @@ import { AmountInput, Spinner, useToast } from "../components/ui";
 import CurrencySelect from "../components/CurrencySelect";
 import TxProgress from "../components/TxProgress";
 import AnonymityMeter from "../components/AnonymityMeter";
+import MergeWarningModal from "../components/MergeWarningModal";
+import MergeStatus from "../components/MergeStatus";
+import { useMergePlans } from "../lib/useMergePlanner";
+import { IMMEDIATE_MERGE_TTL_MS } from "../lib/mergePlan";
 import { currencyById, toBaseUnits, fromBaseUnits, formatAmount, DEFAULT_CURRENCY_ID } from "../lib/currencies";
 import { relayerEnabled, getRelayerInfo, type RelayerInfo } from "../lib/relayer";
+import type { ConsolidationPlan } from "../lib/spendSelection";
 
 // A Stellar account address: G... (56 chars, base32).
 const isStellarAddr = (s: string) => /^G[A-Z2-7]{55}$/.test(s.trim());
 
 export default function Withdraw() {
-  const { withdraw, withdrawViaRelayer, txs, balancesByCurrency, feeAccount } = useWallet();
+  const { withdraw, withdrawViaRelayer, previewConsolidation, consolidateNow, startDelegation, txs, balancesByCurrency, feeAccount } = useWallet();
+  const { add: addMergePlan } = useMergePlans();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const [currencyId, setCurrencyId] = useState(DEFAULT_CURRENCY_ID);
   const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [gasless, setGasless] = useState(false);
+  // multi-note merge UX (see Send.tsx): >4 notes opens the modal, 3–4 merge silently.
+  const [mergePlan, setMergePlan] = useState<ConsolidationPlan | null>(null);
   const [relayer, setRelayer] = useState<RelayerInfo | null>(null);
   const [relayerErr, setRelayerErr] = useState<string | null>(null);
   const toast = useToast();
@@ -40,6 +48,25 @@ export default function Withdraw() {
   const amt = toBaseUnits(amount, currency.decimals);
   const recipientNets = gasless ? amt - fee : amt;
 
+  // The actual withdraw (gasless or direct), after any required note-merge.
+  const doWithdraw = async (dest: string) => {
+    if (gasless && relayer) {
+      await withdrawViaRelayer(currencyId, amt, dest, relayer.relayerAddress, fee);
+      toast.push(`Gasless withdrawal sent — recipient nets ${fromBaseUnits(recipientNets, currency.decimals)} ${currency.symbol}`, "ok");
+    } else {
+      await withdraw(currencyId, amt, dest);
+      toast.push(`Withdrew ${amount} ${currency.symbol}`, "ok");
+    }
+    setAmount("");
+  };
+
+  // Merge notes into ≤2 spendable ones (progress shown by MergeStatus, which
+  // reads the store so it persists across navigation), then withdraw.
+  const mergeThenWithdraw = async (dest: string) => {
+    await consolidateNow(currencyId, amt);
+    await doWithdraw(dest);
+  };
+
   const submit = async () => {
     const dest = to.trim();
     if (!isStellarAddr(dest)) { toast.push("Enter a valid Stellar address (G…)", "err"); return; }
@@ -52,17 +79,53 @@ export default function Withdraw() {
     setBusy(true);
     setStarted(true);
     try {
-      if (gasless && relayer) {
-        await withdrawViaRelayer(currencyId, amt, dest, relayer.relayerAddress, fee);
-        toast.push(`Gasless withdrawal sent — recipient nets ${fromBaseUnits(recipientNets, currency.decimals)} ${currency.symbol}`, "ok");
-      } else {
-        await withdraw(currencyId, amt, dest);
-        toast.push(`Withdrew ${amount} ${currency.symbol}`, "ok");
-      }
-      setAmount("");
+      const plan = await previewConsolidation(currencyId, amt);
+      if (plan && plan.rounds >= 2) { setMergePlan(plan); return; } // >4 notes → ask
+      if (plan && plan.rounds === 1) await mergeThenWithdraw(dest);  // 3–4 notes → silent
+      else await doWithdraw(dest);                                   // ≤2 notes (or insufficient → throws)
     } catch (e: any) {
       toast.push(e.message ?? "withdraw failed", "err");
     } finally { setBusy(false); }
+  };
+
+  // Close the modal immediately and merge-then-withdraw in the background; progress
+  // shows in MergeStatus and the app-wide indicator (store-backed). If delegate is
+  // on, mint a session key first so the back-to-back merges sign silently — no
+  // wallet prompt per step, and the run survives navigating away from Withdraw.
+  const onDoItAnyways = async (delegate: boolean) => {
+    const dest = to.trim();
+    setMergePlan(null);
+    setBusy(true);
+    setStarted(true);
+    if (delegate) {
+      try { await startDelegation(IMMEDIATE_MERGE_TTL_MS); }
+      catch (e: any) { toast.push(`Couldn't delegate signing: ${e?.message ?? e}`, "err"); }
+    }
+    mergeThenWithdraw(dest)
+      .catch((e: any) => toast.push(e.message ?? "merge failed", "err"))
+      .finally(() => setBusy(false));
+  };
+
+  // Schedule a paced merge; optionally delegate signing so it fires unattended.
+  const onMergePrivately = async (deadlineSec: number, delegate: boolean) => {
+    if (!mergePlan) return;
+    setMergePlan(null);
+    if (delegate) {
+      // Cover the whole deadline window (+ settle buffer), but never less than the
+      // immediate-burst TTL — a short deadline shouldn't expire the delegation
+      // partway and pause the plan for re-authorization.
+      try { await startDelegation(Math.max(deadlineSec * 1000 + 60_000, IMMEDIATE_MERGE_TTL_MS)); }
+      catch (e: any) { toast.push(`Couldn't delegate signing: ${e?.message ?? e}`, "err"); }
+    }
+    addMergePlan({
+      currencyId,
+      amountBase: amt,
+      label: `${amount} ${currency.symbol}`,
+      deadline: Date.now() + deadlineSec * 1000,
+      rounds: mergePlan.rounds,
+      totalMerges: mergePlan.totalMerges,
+    });
+    toast.push("Private merge scheduled — return later to withdraw", "ok");
   };
 
   return (
@@ -125,7 +188,18 @@ export default function Withdraw() {
         </button>
       </div>
 
+      <MergeStatus currencyId={currencyId} />
       {tx && <TxProgress tx={tx} />}
+
+      {mergePlan && (
+        <MergeWarningModal
+          noteCount={mergePlan.noteCount}
+          amountLabel={`${amount} ${currency.symbol}`}
+          onClose={() => setMergePlan(null)}
+          onDoItAnyways={onDoItAnyways}
+          onMergePrivately={onMergePrivately}
+        />
+      )}
     </div>
   );
 }

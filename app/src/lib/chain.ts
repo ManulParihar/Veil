@@ -203,6 +203,18 @@ export interface SubmitResult {
   leafIndices: [number, number];
 }
 
+/** True when a failed submit is a stale-sequence error (txBadSeq), the one we can
+ *  recover from by re-fetching the account. Reads the typed result code first,
+ *  falling back to a string match so an SDK shape change can't silently disable
+ *  the retry. */
+function isBadSeq(errorResult: unknown): boolean {
+  try {
+    const name = (errorResult as any)?.result?.()?.switch?.()?.name;
+    if (name === "txBadSeq") return true;
+  } catch { /* fall through to the stringified check */ }
+  try { return JSON.stringify(errorResult).includes("txBadSeq"); } catch { return false; }
+}
+
 export async function submitTransact(
   signer: Signer,
   proof: ProofBytes,
@@ -210,7 +222,6 @@ export async function submitTransact(
   ext: ExtDataWire
 ): Promise<SubmitResult> {
   const s = server();
-  const account = await s.getAccount(signer.publicKey);
   const nextBefore = await getNextLeafIndex(signer.publicKey).catch(() => 0);
 
   const op = new Contract(CONTRACT_ID).call(
@@ -219,32 +230,50 @@ export async function submitTransact(
     signalsScVal(publicSignals),
     extScVal(ext)
   );
-  const tx = new TransactionBuilder(account, { fee: "1000000", networkPassphrase: NETWORK_PASSPHRASE })
-    .addOperation(op)
-    .setTimeout(120)
-    .build();
 
-  // Simulate, then EXPLICITLY sign the auth entries the deposit's token.transfer
-  // requires (a non-root require_auth on the depositor). The depositor is the
-  // signer (fee-payer), so we authorize each address-credential entry with it.
-  const sim = await s.simulateTransaction(tx);
-  if (rpc.Api.isSimulationError(sim)) throw new Error(`simulate: ${sim.error}`);
-  const validUntil = (await s.getLatestLedger()).sequence + 100;
-  const auth = (sim as rpc.Api.SimulateTransactionSuccessResponse).result?.auth ?? [];
-  if (auth.length) {
-    const signed = await Promise.all(
-      auth.map((e) =>
-        e.credentials().switch().name === "sorobanCredentialsAddress"
-          ? signer.authorizeEntry(e, validUntil)
-          : Promise.resolve(e)
-      )
-    );
-    (sim as rpc.Api.SimulateTransactionSuccessResponse).result!.auth = signed;
+  // Build → simulate → sign → submit, retrying on a stale account sequence.
+  // Back-to-back transacts from the SAME source (a burst of delegated note
+  // merges) race the RPC's view of the account: the prior tx is already SUCCESS
+  // but getAccount still returns the old seqnum, so the freshly built tx lands a
+  // txBadSeq. Re-fetch the account and rebuild a few times, giving the RPC a beat
+  // to catch up, before surfacing the error.
+  const SEQ_MAX_ATTEMPTS = 5;
+  let sent: Awaited<ReturnType<typeof s.sendTransaction>> | undefined;
+  for (let attempt = 1; attempt <= SEQ_MAX_ATTEMPTS; attempt++) {
+    const account = await s.getAccount(signer.publicKey);
+    const tx = new TransactionBuilder(account, { fee: "1000000", networkPassphrase: NETWORK_PASSPHRASE })
+      .addOperation(op)
+      .setTimeout(120)
+      .build();
+
+    // Simulate, then EXPLICITLY sign the auth entries the deposit's token.transfer
+    // requires (a non-root require_auth on the depositor). The depositor is the
+    // signer (fee-payer), so we authorize each address-credential entry with it.
+    const sim = await s.simulateTransaction(tx);
+    if (rpc.Api.isSimulationError(sim)) throw new Error(`simulate: ${sim.error}`);
+    const validUntil = (await s.getLatestLedger()).sequence + 100;
+    const auth = (sim as rpc.Api.SimulateTransactionSuccessResponse).result?.auth ?? [];
+    if (auth.length) {
+      const signed = await Promise.all(
+        auth.map((e) =>
+          e.credentials().switch().name === "sorobanCredentialsAddress"
+            ? signer.authorizeEntry(e, validUntil)
+            : Promise.resolve(e)
+        )
+      );
+      (sim as rpc.Api.SimulateTransactionSuccessResponse).result!.auth = signed;
+    }
+    const prepared = rpc.assembleTransaction(tx, sim).build();
+    const signedPrepared = await signer.signTransaction(prepared);
+    sent = await s.sendTransaction(signedPrepared);
+    if (sent.status !== "ERROR") break;
+    if (isBadSeq(sent.errorResult) && attempt < SEQ_MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 800 * attempt)); // let the RPC's seqnum catch up
+      continue;
+    }
+    throw new Error(`submit error: ${JSON.stringify(sent.errorResult)}`);
   }
-  const prepared = rpc.assembleTransaction(tx, sim).build();
-  const signedPrepared = await signer.signTransaction(prepared);
-  const sent = await s.sendTransaction(signedPrepared);
-  if (sent.status === "ERROR") throw new Error(`submit error: ${JSON.stringify(sent.errorResult)}`);
+  if (!sent || sent.status === "ERROR") throw new Error("submit failed: exhausted sequence retries");
 
   const hash = sent.hash;
   // poll

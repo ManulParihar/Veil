@@ -5,6 +5,8 @@ import { Logo, AddressBadge, ExplorerLink } from "./ui";
 import PoofSparkle from "./PoofSparkle";
 import { EXPLORER_ACCOUNT } from "../lib/types";
 import { useSchedulePoller } from "../lib/useScheduler";
+import { useMergePlanner } from "../lib/useMergePlanner";
+import MergeGlobalIndicator from "./MergeGlobalIndicator";
 
 const NAV = [
   { to: "/app", label: "Dashboard", icon: "M3 12l9-9 9 9M5 10v10h14V10" },
@@ -29,8 +31,10 @@ function Icon({ d }: { d: string }) {
 export default function Layout({ children }: { children: ReactNode }) {
   const { feeAccount, feeBalance, disconnect } = useWallet();
   const nav = useNavigate();
-  // single background firing loop for recurring payments (runs app-wide)
+  // single background firing loops (run app-wide): recurring payments + the
+  // timed "Merge privately" note-consolidation planner.
   useSchedulePoller();
+  useMergePlanner();
   return (
     <div className="min-h-full flex">
       <aside className="hidden md:flex w-64 flex-col border-r border-poof-border/50 bg-poof-bg/80 backdrop-blur-xl p-5">
@@ -95,6 +99,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-5 py-8 animate-fade-in">{children}</div>
       </main>
+      <MergeGlobalIndicator />
     </div>
   );
 }

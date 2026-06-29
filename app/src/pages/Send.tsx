@@ -4,11 +4,17 @@ import { AmountInput, Spinner, useToast } from "../components/ui";
 import CurrencySelect from "../components/CurrencySelect";
 import TxProgress from "../components/TxProgress";
 import AnonymityMeter from "../components/AnonymityMeter";
+import MergeWarningModal from "../components/MergeWarningModal";
+import MergeStatus from "../components/MergeStatus";
+import { useMergePlans } from "../lib/useMergePlanner";
+import { IMMEDIATE_MERGE_TTL_MS } from "../lib/mergePlan";
 import { currencyById, toBaseUnits, fromBaseUnits, DEFAULT_CURRENCY_ID } from "../lib/currencies";
 import { parsePaymentLink } from "../lib/paymentLink";
+import type { ConsolidationPlan } from "../lib/spendSelection";
 
 export default function Send() {
-  const { send, txs, balancesByCurrency, address } = useWallet();
+  const { send, previewConsolidation, consolidateNow, startDelegation, txs, balancesByCurrency, address } = useWallet();
+  const { add: addMergePlan } = useMergePlans();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const [currencyId, setCurrencyId] = useState(DEFAULT_CURRENCY_ID);
@@ -16,6 +22,9 @@ export default function Send() {
   const [busy, setBusy] = useState(false);
   const [memo, setMemo] = useState("");
   const [showMemo, setShowMemo] = useState(false);
+  // multi-note merge UX: a >4-note spend opens the warning modal; a 3–4-note spend
+  // merges silently first. `prep` drives the live merge-progress banner.
+  const [mergePlan, setMergePlan] = useState<ConsolidationPlan | null>(null);
   // track which request link we've already auto-applied so we don't fight edits
   const [appliedLink, setAppliedLink] = useState<string | null>(null);
   const toast = useToast();
@@ -41,6 +50,20 @@ export default function Send() {
     toast.push("Payment request applied", "info");
   }, [parsed, to, appliedLink, isRequest, toast]);
 
+  // The actual private send, after any required note-merge has run.
+  const doSend = async (a: bigint) => {
+    await send(currencyId, parsed!.pubkey, parsed!.encPub, a);
+    toast.push(`Sent ${amount} ${currency.symbol} privately`, "ok");
+    setTo(""); setAmount(""); setMemo(""); setAppliedLink(null);
+  };
+
+  // Merge notes into ≤2 spendable ones (progress shown by MergeStatus, which
+  // reads the store so it persists across navigation), then send.
+  const mergeThenSend = async (a: bigint) => {
+    await consolidateNow(currencyId, a);
+    await doSend(a);
+  };
+
   const submit = async () => {
     if (!parsed) { toast.push("Invalid Veil address (expect pubkey.encpub or a veil: link)", "err"); return; }
     const a = toBaseUnits(amount, currency.decimals);
@@ -49,12 +72,61 @@ export default function Send() {
     setBusy(true);
     setStarted(true);
     try {
-      await send(currencyId, parsed.pubkey, parsed.encPub, a);
-      toast.push(`Sent ${amount} ${currency.symbol} privately`, "ok");
-      setTo(""); setAmount(""); setMemo(""); setAppliedLink(null);
+      const plan = await previewConsolidation(currencyId, a);
+      if (plan && plan.rounds >= 2) {
+        // >4 notes: let the user choose burst vs. private. Modal drives the rest.
+        setMergePlan(plan);
+        return;
+      }
+      if (plan && plan.rounds === 1) await mergeThenSend(a); // 3–4 notes: silent merge
+      else await doSend(a);                                   // ≤2 notes (or insufficient → throws)
     } catch (e: any) {
       toast.push(e.message ?? "send failed", "err");
     } finally { setBusy(false); }
+  };
+
+  // "Do it anyways": merge everything now (back-to-back), then send. Close the
+  // modal right away and run in the background — progress shows in MergeStatus and
+  // the app-wide indicator (store-backed), so the user isn't trapped on a spinner.
+  // If delegate is on, mint a session key first so the back-to-back merges (and
+  // the trailing send) sign silently — no wallet prompt per step, and the run
+  // survives navigating away from Send.
+  const onDoItAnyways = async (delegate: boolean) => {
+    const a = toBaseUnits(amount, currency.decimals);
+    setMergePlan(null);
+    setBusy(true);
+    setStarted(true);
+    if (delegate) {
+      try { await startDelegation(IMMEDIATE_MERGE_TTL_MS); }
+      catch (e: any) { toast.push(`Couldn't delegate signing: ${e?.message ?? e}`, "err"); }
+    }
+    mergeThenSend(a)
+      .catch((e: any) => toast.push(e.message ?? "merge failed", "err"))
+      .finally(() => setBusy(false));
+  };
+
+  // "Merge privately": schedule a paced, randomized consolidation by a deadline.
+  // Optionally delegate signing (session key) so steps fire unattended.
+  const onMergePrivately = async (deadlineSec: number, delegate: boolean) => {
+    const a = toBaseUnits(amount, currency.decimals);
+    if (!mergePlan) return;
+    setMergePlan(null);
+    if (delegate) {
+      // Cover the whole deadline window (+ settle buffer), but never less than the
+      // immediate-burst TTL — a short deadline shouldn't expire the delegation
+      // partway and pause the plan for re-authorization.
+      try { await startDelegation(Math.max(deadlineSec * 1000 + 60_000, IMMEDIATE_MERGE_TTL_MS)); }
+      catch (e: any) { toast.push(`Couldn't delegate signing: ${e?.message ?? e}`, "err"); }
+    }
+    addMergePlan({
+      currencyId,
+      amountBase: a,
+      label: `${amount} ${currency.symbol}`,
+      deadline: Date.now() + deadlineSec * 1000,
+      rounds: mergePlan.rounds,
+      totalMerges: mergePlan.totalMerges,
+    });
+    toast.push("Private merge scheduled — return later to send or withdraw", "ok");
   };
 
   return (
@@ -132,7 +204,18 @@ export default function Send() {
         </button>
       </div>
 
+      <MergeStatus currencyId={currencyId} />
       {tx && <TxProgress tx={tx} />}
+
+      {mergePlan && (
+        <MergeWarningModal
+          noteCount={mergePlan.noteCount}
+          amountLabel={`${amount} ${currency.symbol}`}
+          onClose={() => setMergePlan(null)}
+          onDoItAnyways={onDoItAnyways}
+          onMergePrivately={onMergePrivately}
+        />
+      )}
     </div>
   );
 }

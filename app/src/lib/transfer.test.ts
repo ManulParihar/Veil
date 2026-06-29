@@ -157,4 +157,41 @@ describe("transfer spends a self-deposited note", () => {
     const vkey = JSON.parse(readFileSync(join(CIRCUIT, "verification_key.json"), "utf8"));
     expect(await snarkjs.groth16.verify(vkey, publicSignals, proof)).toBe(true);
   }, 60000);
+
+  // A self-send (recipient == self) spending the WHOLE note has change 0, so the
+  // ONLY output that carries value is output[0] — and it's encrypted to us. The
+  // store must record it (store.send pushes output[0] when isSelf); dropping it
+  // is what made a "merge everything to myself" read as a zero balance.
+  it("a full-balance self-send keeps its value in output[0], owned by the sender", () => {
+    const keys = deriveKeys(fieldToBytes(424242n));
+    const cid = DEFAULT_CURRENCY_ID;
+    const tree = new ClientMerkleTree();
+    const note: Note = { amount: 1000n, currencyId: cid, pubkey: keys.publicKey, blinding: 77n };
+    const idx = tree.insert(commitment(note));
+
+    const xfer = buildTransfer({
+      tree, sk: keys.spendKey, selfPub: keys.publicKey, selfEncPub: keys.encPublic,
+      inputs: [{ note, leafIndex: idx }],
+      // recipient IS us, spend the whole note → change is 0
+      amount: 1000n, recipientPub: keys.publicKey, recipientEncPub: keys.encPublic,
+      settlementAddress: "GAKON75EXHETR5EAUTZLO5S7YSYMUXV4VRAPYWHHD4AG2QVSBAM3CJLM",
+    });
+
+    expect(xfer.outputs[0].note.amount).toBe(1000n);
+    expect(xfer.outputs[1].note.amount).toBe(0n); // no change
+
+    // output[0] is encrypted to us and recoverable — i.e. the funds are NOT
+    // withdrawn, they're a self-note the client must keep.
+    const recvIndex = tree.insert(commitment(xfer.outputs[0].note));
+    const found = scanEvents(keys, [{
+      commitment: fieldToBytes(commitment(xfer.outputs[0].note)),
+      leafIndex: recvIndex,
+      ciphertext: xfer.extData.ciphertexts[0],
+      viewTag: xfer.extData.viewTags[0],
+      ledger: 1,
+    }]);
+    expect(found).toHaveLength(1);
+    expect(found[0].note.amount).toBe(1000n);
+    expect(found[0].note.pubkey).toBe(keys.publicKey);
+  });
 });
