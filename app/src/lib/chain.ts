@@ -336,6 +336,16 @@ export interface EventScanner {
   getEvents(req: any): Promise<{ events?: any[]; cursor?: string; latestLedger?: number }>;
 }
 
+/** Ledger sequence encoded in a Soroban events cursor ("<toid>-<eventIndex>"):
+ *  the toid's high 32 bits are the ledger, so `BigInt(toid) >> 32` recovers it.
+ *  Lets the pager tell a mid-range gap (cursor ledger < latestLedger) from the
+ *  true chain tip (cursor ledger ≥ latestLedger). Returns 0 on an unparseable
+ *  cursor so head detection simply defers to the no-cursor / range-error stops. */
+function ledgerFromCursor(cursor: string): number {
+  const toid = cursor.split("-")[0];
+  try { return Number(BigInt(toid) >> 32n); } catch { return 0; }
+}
+
 /**
  * Page a contract's events from `from`, tolerating Soroban RPC's rolling ~7-day
  * retention window. Returns the raw events (caller parses) plus `clamped` — true
@@ -351,11 +361,15 @@ export interface EventScanner {
  *    with "…within the ledger range: <floor> - <latest>", parse the floor and
  *    clamp up. Only before paging begins (no cursor yet).
  *
- * Termination is dead-zone-safe: a clamped scan starts far below the contract's
- * first event, so the gap pages come back EMPTY but WITH a forward cursor. An
- * empty page is treated as "caught up to head" only once we've actually collected
- * events; before that we keep paging through the gap (the old code stopped on the
- * first empty page and returned an empty, corrupt tree).
+ * Termination is gap-safe via the cursor's ledger position, NOT page emptiness.
+ * Soroban returns an empty page WITH a forward cursor for BOTH a quiet stretch
+ * between activity bursts AND the chain tip — they are indistinguishable by
+ * emptiness alone. The old heuristic ("empty page after we've collected data ⇒
+ * head") truncated the scan at the first interior gap, silently dropping every
+ * commitment after it (recent deposits → wrong leaf count, missing notes, a
+ * balance that reads 0). Instead we keep paging until the cursor's ledger reaches
+ * `latestLedger` (the real tip) — which also covers the leading dead zone of a
+ * clamped scan — with the tip range-error and MAX_PAGES as backstops.
  */
 export async function scanContractEvents(
   s: EventScanner,
@@ -375,7 +389,7 @@ export async function scanContractEvents(
   const out: any[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
-    let resp: { events?: any[]; cursor?: string };
+    let resp: { events?: any[]; cursor?: string; latestLedger?: number };
     try {
       resp = await s.getEvents({
         ...(cursor ? { cursor } : { startLedger: from }),
@@ -406,7 +420,10 @@ export async function scanContractEvents(
     for (const ev of evs) out.push(ev);
     cursor = resp.cursor;
     if (!cursor) break;
-    if (evs.length === 0 && out.length > 0) break; // empty page AFTER data ⇒ at head
+    // Stop only once the cursor has paged up to the real chain tip; an empty page
+    // before then is an interior gap (or the leading dead zone), not head — keep
+    // going so a quiet stretch between bursts can't truncate the tail.
+    if (resp.latestLedger != null && ledgerFromCursor(cursor) >= resp.latestLedger) break;
   }
   return { events: out, clamped };
 }
